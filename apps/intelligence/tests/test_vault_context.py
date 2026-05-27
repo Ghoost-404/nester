@@ -1,6 +1,6 @@
-import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.vault_context import VaultContextFetcher
 
@@ -31,18 +31,18 @@ class TestVaultContextFetcher:
                 }
             ]
         }
-        
+
         with patch('aiohttp.ClientSession') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 200
             mock_response.json = AsyncMock(return_value=mock_response_data)
-            
+
             mock_session_instance = AsyncMock()
             mock_session_instance.get.return_value.__aenter__.return_value = mock_response
             mock_session.return_value.__aenter__.return_value = mock_session_instance
-            
+
             result = await fetcher.fetch_user_vaults("test-user-id")
-            
+
             assert len(result) == 1
             vault = result[0]
             assert vault["name"] == "Test Vault 1"
@@ -60,13 +60,13 @@ class TestVaultContextFetcher:
         with patch('aiohttp.ClientSession') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 500
-            
+
             mock_session_instance = AsyncMock()
             mock_session_instance.get.return_value.__aenter__.return_value = mock_response
             mock_session.return_value.__aenter__.return_value = mock_session_instance
-            
+
             result = await fetcher.fetch_user_vaults("test-user-id")
-            
+
             assert result == []
 
     @pytest.mark.asyncio
@@ -103,18 +103,18 @@ class TestVaultContextFetcher:
                 }
             ]
         }
-        
+
         with patch('aiohttp.ClientSession') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 200
             mock_response.json = AsyncMock(return_value=mock_response_data)
-            
+
             mock_session_instance = AsyncMock()
             mock_session_instance.get.return_value.__aenter__.return_value = mock_response
             mock_session.return_value.__aenter__.return_value = mock_session_instance
-            
+
             result = await fetcher.fetch_market_rates()
-            
+
             # Should only return Aave, Blend, Compound
             assert len(result) == 3
             assert result[0]["protocol"] == "aave"
@@ -126,13 +126,13 @@ class TestVaultContextFetcher:
         with patch('aiohttp.ClientSession') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 500
-            
+
             mock_session_instance = AsyncMock()
             mock_session_instance.get.return_value.__aenter__.return_value = mock_response
             mock_session.return_value.__aenter__.return_value = mock_session_instance
-            
+
             result = await fetcher.fetch_market_rates()
-            
+
             # Should return fallback rates
             assert len(result) == 3
             assert result[0]["protocol"] == "aave"
@@ -146,9 +146,9 @@ class TestVaultContextFetcher:
     async def test_fetch_market_rates_exception_fallback(self, fetcher):
         with patch('aiohttp.ClientSession') as mock_session:
             mock_session.side_effect = Exception("Network error")
-            
+
             result = await fetcher.fetch_market_rates()
-            
+
             # Should return fallback rates
             assert len(result) == 3
             assert result[0]["protocol"] == "aave"
@@ -169,18 +169,18 @@ class TestVaultContextFetcher:
             "liquidity_risk": 0.09,
             "computed_at": "2025-03-15T10:00:00Z"
         }
-        
+
         with patch('aiohttp.ClientSession') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 200
             mock_response.json = AsyncMock(return_value=mock_response_data)
-            
+
             mock_session_instance = AsyncMock()
             mock_session_instance.get.return_value.__aenter__.return_value = mock_response
             mock_session.return_value.__aenter__.return_value = mock_session_instance
-            
+
             result = await fetcher.fetch_vault_risk("test-vault-id")
-            
+
             assert result["overall"] == 54.0
             assert result["tier"] == "medium"
             assert result["concentration_risk"] == 0.61
@@ -193,13 +193,13 @@ class TestVaultContextFetcher:
         with patch('aiohttp.ClientSession') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 500
-            
+
             mock_session_instance = AsyncMock()
             mock_session_instance.get.return_value.__aenter__.return_value = mock_response
             mock_session.return_value.__aenter__.return_value = mock_session_instance
-            
+
             result = await fetcher.fetch_vault_risk("test-vault-id")
-            
+
             assert result == {}
 
     def test_build_context_block_with_data(self, fetcher):
@@ -214,17 +214,21 @@ class TestVaultContextFetcher:
                 "id": "vault-1"
             }
         ]
-        
+
         market_rates = [
             {"protocol": "aave", "apy": 0.065},
             {"protocol": "blend", "apy": 0.09},
             {"protocol": "compound", "apy": 0.058}
         ]
-        
+
         result = fetcher.build_context_block(vaults, market_rates)
-        
+
         assert "## User Portfolio" in result
-        assert "- Test Vault: $1,000.00 balance, 8.50% APY, Allocation: [Aave: 60.0%, Blend: 40.0%]" in result
+        expected = (
+            "- Test Vault: $1,000.00 balance, 8.50% APY, "
+            "Allocation: [Aave: 60.0%, Blend: 40.0%]"
+        )
+        assert expected in result
         assert "## Current Market Rates (Live)" in result
         assert "- AAVE: 6.50% APY" in result
         assert "- BLEND: 9.00% APY" in result
@@ -233,9 +237,9 @@ class TestVaultContextFetcher:
     def test_build_context_block_empty_vaults(self, fetcher):
         vaults = []
         market_rates = [{"protocol": "aave", "apy": 0.065}]
-        
+
         result = fetcher.build_context_block(vaults, market_rates)
-        
+
         assert "The user has no active vaults." in result
         assert "## Current Market Rates (Live)" in result
 
@@ -250,9 +254,9 @@ class TestVaultContextFetcher:
             "id": "vault-1"
         }]
         market_rates = []
-        
+
         result = fetcher.build_context_block(vaults, market_rates)
-        
+
         assert "## User Portfolio" in result
         assert "Market data unavailable." in result
 
@@ -268,7 +272,7 @@ class TestVaultContextFetcher:
                 "id": "vault-1"
             }
         ]
-        
+
         risk_data = {
             "vault-1": {
                 "overall": 54.0,
@@ -279,9 +283,9 @@ class TestVaultContextFetcher:
                 "liquidity_risk": 0.09
             }
         }
-        
+
         result = fetcher.build_risk_profile_block(vaults, risk_data)
-        
+
         assert "## Risk Profile" in result
         assert "- Test Vault: medium risk (score 54/100)." in result
         assert "Primary driver:" in result
@@ -290,9 +294,9 @@ class TestVaultContextFetcher:
     def test_build_risk_profile_block_empty_vaults(self, fetcher):
         vaults = []
         risk_data = {}
-        
+
         result = fetcher.build_risk_profile_block(vaults, risk_data)
-        
+
         assert "## Risk Profile" in result
         assert "No vaults to assess risk." in result
 
@@ -308,11 +312,11 @@ class TestVaultContextFetcher:
                 "id": "vault-1"
             }
         ]
-        
+
         risk_data = {}  # Empty risk data
-        
+
         result = fetcher.build_risk_profile_block(vaults, risk_data)
-        
+
         assert "## Risk Profile" in result
         assert "- Test Vault: Risk data unavailable" in result
 

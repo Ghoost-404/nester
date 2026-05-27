@@ -1,7 +1,6 @@
 """Vault context fetcher for Prometheus AI."""
-import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 try:
     from cachetools import TTLCache
@@ -11,7 +10,6 @@ except ImportError:
     logging.warning("cachetools not available, using simple dict cache")
 
 import aiohttp
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +28,7 @@ class VaultContextFetcher:
     async def fetch_user_vaults(self, user_id: str) -> List[Dict[str, Any]]:
         """
         Fetch user's vaults from Nester API.
-        
+
         Returns list of vault dicts: {name, balance_usd, apy, allocation_breakdown}
         """
         url = f"{self.api_base_url}/api/v1/users/{user_id}/vaults"
@@ -38,7 +36,7 @@ class VaultContextFetcher:
             "Authorization": f"Bearer {self.service_api_key}",
             "Content-Type": "application/json"
         }
-        
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
@@ -56,15 +54,17 @@ class VaultContextFetcher:
                                     amount = alloc.get("amount_usd", 0)
                                     percentage = (amount / total_balance) * 100
                                     allocation_breakdown[protocol] = round(percentage, 2)
-                            
+
                             vaults.append({
-                                "name": vault.get("name", vault.get("contract_address", "Unknown Vault")),
+                                "name": vault.get(
+                                    "name", vault.get("contract_address", "Unknown Vault")
+                                ),
                                 "balance_usd": vault.get("total_balance_usd", 0),
                                 "apy": vault.get("average_apy", 0),
                                 "allocation_breakdown": allocation_breakdown,
                                 "yield_earned": vault.get("yield_earned_usd", 0),
                                 "lock_period_days": vault.get("lock_period_days", 0),
-                                "id": vault.get("id", "")  # Include ID for risk fetching
+                                "id": vault.get("id", ""),
                             })
                         return vaults
                     else:
@@ -77,25 +77,28 @@ class VaultContextFetcher:
     async def fetch_vault_risk(self, vault_id: str) -> Dict[str, Any]:
         """
         Fetch risk score for a specific vault from Nester API.
-        
-        Returns risk dict: {overall, tier, concentration_risk, protocol_risk, yield_volatility, liquidity_risk}
+
+        Returns risk dict: {overall, tier, concentration_risk, protocol_risk,
+        yield_volatility, liquidity_risk}
         """
         if not vault_id:
             return {}
-            
+
         url = f"{self.api_base_url}/api/v1/vaults/{vault_id}/risk"
         headers = {
             "Authorization": f"Bearer {self.service_api_key}",
             "Content-Type": "application/json"
         }
-        
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
                         return await response.json()
                     else:
-                        logger.warning(f"Failed to fetch risk for vault {vault_id}: {response.status}")
+                        logger.warning(
+                            f"Failed to fetch risk for vault {vault_id}: {response.status}"
+                        )
                         return {}
         except Exception as e:
             logger.warning(f"Error fetching risk for vault {vault_id}: {e}")
@@ -104,7 +107,7 @@ class VaultContextFetcher:
     async def fetch_market_rates(self) -> List[Dict[str, Any]]:
         """
         Fetch market rates from DefiLlama with caching and fallback.
-        
+
         Returns list of dicts filtered for Aave, Blend, Compound entries.
         """
         # Check cache first
@@ -114,7 +117,9 @@ class VaultContextFetcher:
                 return cached
         else:
             import time
-            if time.time() < self._market_rates_cache_expiry and self._market_rates_cache.get("data"):
+            if time.time() < self._market_rates_cache_expiry and self._market_rates_cache.get(
+                "data"
+            ):
                 return self._market_rates_cache["data"]
 
         # Fetch from DefiLlama
@@ -125,11 +130,11 @@ class VaultContextFetcher:
                     if response.status == 200:
                         data = await response.json()
                         pools = data.get("data", [])
-                        
+
                         # Filter for Aave, Blend, Compound
                         filtered_rates = []
                         target_protocols = {"aave", "blend", "compound"}
-                        
+
                         for pool in pools:
                             project = pool.get("project", "").lower()
                             if project in target_protocols:
@@ -140,7 +145,7 @@ class VaultContextFetcher:
                                     "tvlUsd": pool.get("tvlUsd", 0),
                                     "chain": pool.get("chain", "")
                                 })
-                        
+
                         # Cache the result
                         if HAS_CACHETOOLS:
                             self._market_rates_cache["market_rates"] = filtered_rates
@@ -151,21 +156,33 @@ class VaultContextFetcher:
                                 "expiry": time.time() + 300  # 5 minutes
                             }
                             self._market_rates_cache_expiry = time.time() + 300
-                        
+
                         return filtered_rates
                     else:
                         logger.warning(f"DefiLlama API returned status {response.status}")
         except Exception as e:
             logger.warning(f"Failed to fetch from DefiLlama: {e}")
-        
+
         # Fallback to hardcoded rates
         logger.warning("Using fallback market rates")
         fallback_rates = [
             {"protocol": "aave", "symbol": "aUSDC", "apy": 0.065, "tvlUsd": 0, "chain": "ethereum"},
-            {"protocol": "blend", "symbol": "blendUSDC", "apy": 0.09, "tvlUsd": 0, "chain": "stellar"},
-            {"protocol": "compound", "symbol": "cUSDC", "apy": 0.058, "tvlUsd": 0, "chain": "ethereum"}
+            {
+                "protocol": "blend",
+                "symbol": "blendUSDC",
+                "apy": 0.09,
+                "tvlUsd": 0,
+                "chain": "stellar",
+            },
+            {
+                "protocol": "compound",
+                "symbol": "cUSDC",
+                "apy": 0.058,
+                "tvlUsd": 0,
+                "chain": "ethereum",
+            },
         ]
-        
+
         # Cache fallback too
         if HAS_CACHETOOLS:
             self._market_rates_cache["market_rates"] = fallback_rates
@@ -176,10 +193,12 @@ class VaultContextFetcher:
                 "expiry": time.time() + 300
             }
             self._market_rates_cache_expiry = time.time() + 300
-            
+
         return fallback_rates
 
-    def build_context_block(self, vaults: List[Dict[str, Any]], market_rates: List[Dict[str, Any]]) -> str:
+    def build_context_block(
+        self, vaults: List[Dict[str, Any]], market_rates: List[Dict[str, Any]]
+    ) -> str:
         """
         Build a formatted string block to be injected into the system prompt.
         """
@@ -192,16 +211,20 @@ class VaultContextFetcher:
                 balance = vault.get("balance_usd", 0)
                 apy = vault.get("apy", 0)
                 allocation = vault.get("allocation_breakdown", {})
-                
-                alloc_str = ", ".join([f"{k}: {v}%" for k, v in allocation.items()]) if allocation else "No allocation data"
-                
+
+                alloc_str = (
+                    ", ".join([f"{k}: {v}%" for k, v in allocation.items()])
+                    if allocation
+                    else "No allocation data"
+                )
+
                 vault_lines.append(
                     f"- {name}: ${balance:,.2f} balance, {apy:.2f}% APY, Allocation: [{alloc_str}]"
                 )
-            
+
             vault_context = f"""## User Portfolio
 {chr(10).join(vault_lines)}"""
-        
+
         if not market_rates:
             market_context = "## Current Market Rates (Live)\nMarket data unavailable."
         else:
@@ -210,36 +233,38 @@ class VaultContextFetcher:
                 protocol = rate.get("protocol", "unknown").upper()
                 apy = rate.get("apy", 0)
                 market_lines.append(f"- {protocol}: {apy:.2f}% APY")
-            
+
             market_context = f"""## Current Market Rates (Live)
 {chr(10).join(market_lines)}"""
-        
+
         return f"""{vault_context}
 
 {market_context}"""
 
-    def build_risk_profile_block(self, vaults: List[Dict[str, Any]], risk_data: Dict[str, Dict[str, Any]]) -> str:
+    def build_risk_profile_block(
+        self, vaults: List[Dict[str, Any]], risk_data: Dict[str, Dict[str, Any]]
+    ) -> str:
         """
         Build a risk profile block to be injected into the system prompt.
         """
         if not vaults:
             return "## Risk Profile\nNo vaults to assess risk."
-        
+
         risk_lines = []
         for vault in vaults:
             vault_id = vault.get("id", "")
             vault_name = vault.get("name", vault.get("contract_address", "Unknown Vault"))
-            
+
             # Get risk data for this vault
             vault_risk = risk_data.get(vault_id, {}) if risk_data else {}
-            
+
             if not vault_risk:
                 risk_lines.append(f"- {vault_name}: Risk data unavailable")
                 continue
-            
+
             overall_score = vault_risk.get("overall", 0)
             tier = vault_risk.get("tier", "unknown")
-            
+
             # Find the primary driver (highest weighted dimension)
             # Weights: concentration 35%, protocol 30%, yield volatility 20%, liquidity 15%
             weighted_scores = {
@@ -248,45 +273,59 @@ class VaultContextFetcher:
                 "yield_volatility": vault_risk.get("yield_volatility", 0) * 0.20,
                 "liquidity_risk": vault_risk.get("liquidity_risk", 0) * 0.15
             }
-            
-            primary_driver = max(weighted_scores, key=weighted_scores.get) if weighted_scores else "unknown"
+
+            primary_driver = (
+                max(weighted_scores, key=weighted_scores.get) if weighted_scores else "unknown"
+            )
             primary_driver_name = {
                 "concentration_risk": "Concentration Risk",
-                "protocol_risk": "Protocol Risk", 
+                "protocol_risk": "Protocol Risk",
                 "yield_volatility": "Yield Volatility",
                 "liquidity_risk": "Liquidity Risk"
             }.get(primary_driver, "Unknown Factor")
-            
+
             # Generate recommendation based on tier and primary driver
             recommendation = self._generate_risk_recommendation(tier, primary_driver, vault_risk)
-            
+
             risk_lines.append(
                 f"- {vault_name}: {tier.capitalize()} risk (score {overall_score:.0f}/100). "
                 f"Primary driver: {primary_driver_name}. {recommendation}"
             )
-        
+
         return f"""## Risk Profile
 {chr(10).join(risk_lines)}"""
 
-    def _generate_risk_recommendation(self, tier: str, primary_driver: str, risk_data: Dict[str, Any]) -> str:
+    def _generate_risk_recommendation(
+        self, tier: str, primary_driver: str, risk_data: Dict[str, Any]
+    ) -> str:
         """Generate a contextual rebalancing suggestion based on risk profile."""
         if tier == "low":
             return "Your portfolio is well-balanced. Consider maintaining current allocation."
         elif tier == "medium":
             if primary_driver == "concentration_risk":
-                return "Consider diversifying across additional protocols to reduce concentration risk."
+                return "Consider diversifying across additional protocols to reduce "
+                "concentration risk."
             elif primary_driver == "protocol_risk":
-                return "Consider shifting allocation toward lower-risk protocols like Aave or Compound."
+                return (
+                    "Consider shifting allocation toward lower-risk protocols "
+                    "like Aave or Compound."
+                )
             elif primary_driver == "yield_volatility":
-                return "Consider allocating to more stable vaults with lower APY variability."
+                return "Consider allocating to more stable vaults with lower "
+                "APY variability."
             else:  # liquidity_risk
-                return "Your vault size may be large relative to protocol market size. Consider smaller positions."
+                return "Your vault size may be large relative to protocol market "
+                "size. Consider smaller positions."
         else:  # high risk
             if primary_driver == "concentration_risk":
-                return "Strongly consider diversifying across multiple protocols to reduce concentration risk."
+                return "Strongly consider diversifying across multiple protocols to "
+                "reduce concentration risk."
             elif primary_driver == "protocol_risk":
-                return "Consider reallocating to lower-risk protocols to reduce overall portfolio risk."
+                return "Consider reallocating to lower-risk protocols to reduce "
+                "overall portfolio risk."
             elif primary_driver == "yield_volatility":
-                return "Consider moving to more stable yield strategies to reduce volatility exposure."
+                return "Consider moving to more stable yield strategies to reduce "
+                "volatility exposure."
             else:  # liquidity_risk
-                return "Consider reducing position size to lower liquidity risk or spreading across protocols."
+                return "Consider reducing position size to lower liquidity risk or "
+                "spreading across protocols."

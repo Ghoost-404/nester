@@ -11,7 +11,7 @@ interface RiskGaugeChartProps {
   };
 }
 
-export function RiskGaugeChart({ data }: RiskGaugeChartProps) {
+const RiskGaugeChart = ({ data }: RiskGaugeChartProps) => {
   const getColor = (score: number): string => {
     if (score >= 0 && score <= 33) {
       return "#10b981"; // green-500
@@ -54,7 +54,7 @@ export function RiskGaugeChart({ data }: RiskGaugeChartProps) {
       </div>
     </div>
   );
-}
+};
 
 interface RiskDimensionsTableProps {
   data: {
@@ -67,7 +67,7 @@ interface RiskDimensionsTableProps {
   };
 }
 
-export function RiskDimensionsTable({ data }: RiskDimensionsTableProps) {
+const RiskDimensionsTable = ({ data }: RiskDimensionsTableProps) => {
   const dimensions = [
     {
       name: "Concentration",
@@ -138,4 +138,6 @@ export function RiskDimensionsTable({ data }: RiskDimensionsTableProps) {
       </table>
     </div>
   );
-}
+};
+
+export { RiskGaugeChart, RiskDimensionsTable };

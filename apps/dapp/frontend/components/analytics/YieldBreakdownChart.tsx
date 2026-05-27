@@ -1,3 +1,5 @@
+"use client";
+
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 interface VaultMonthlyYield {

@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/suncrestlabs/nester/apps/api/internal/domain/performance"
-	"github.com/suncrestlabs/nester/apps/api/internal/service"
+	"github.com/suncrestlabs/nester/apps/api/internal/service/performance"
 	"github.com/suncrestlabs/nester/apps/api/pkg/logger"
 	"github.com/suncrestlabs/nester/apps/api/pkg/response"
 )
@@ -124,7 +124,7 @@ func (h *AnalyticsHandler) getUserAnalytics(w http.ResponseWriter, r *http.Reque
 	analyticsData, err := h.performanceService.GetUserAnalytics(r.Context(), userID, fromTime, toTime)
 	if err != nil {
 		logger.FromContext(r.Context()).Error("failed to get user analytics", "error", err.Error(), "user_id", userID)
-		response.WriteJSON(w, http.StatusInternalServerError, response.InternalServerError())
+		response.WriteJSON(w, http.StatusInternalServerError, response.Err(http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error"))
 		return
 	}
 

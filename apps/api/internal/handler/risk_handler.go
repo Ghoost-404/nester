@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/suncrestlabs/nester/apps/api/internal/services"
@@ -45,7 +46,7 @@ func (h *RiskHandler) getVaultRisk(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		logger.FromContext(r.Context()).Error("failed to get vault risk", "error", err.Error(), "vault_id", vaultID)
-		response.WriteJSON(w, http.StatusInternalServerError, response.InternalServerError())
+		response.WriteJSON(w, http.StatusInternalServerError, response.Err(http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error"))
 		return
 	}
 

@@ -94,7 +94,7 @@ func (s *RiskService) computeRiskScore(vault *vault.Vault) *RiskScore {
 
 	// 1. Concentration Risk (HHI)
 	var hhi float64
-	totalBalance := vault.TotalBalance.InexactFloat64()
+	totalBalance := vault.CurrentBalance.InexactFloat64()
 	if totalBalance > 0 {
 		for _, alloc := range vault.Allocations {
 			allocFraction := alloc.Amount.InexactFloat64() / totalBalance

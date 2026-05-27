@@ -120,7 +120,7 @@ async def stream_chat(user_id: str, message: str) -> AsyncIterator[str]:
     vault_context_fetcher = get_vault_context_fetcher()
     vaults = await vault_context_fetcher.fetch_user_vaults(user_id)
     market_rates = await vault_context_fetcher.fetch_market_rates()
-    
+
     # Fetch risk data for each vault
     risk_data = {}
     for vault in vaults:
@@ -129,26 +129,27 @@ async def stream_chat(user_id: str, message: str) -> AsyncIterator[str]:
             risk_info = await vault_context_fetcher.fetch_vault_risk(vault_id)
             if risk_info:
                 risk_data[vault_id] = risk_info
-    
+
     context_block = vault_context_fetcher.build_context_block(vaults, market_rates)
     risk_profile_block = vault_context_fetcher.build_risk_profile_block(vaults, risk_data)
-    
-    # Build dynamic system prompt with context
-    dynamic_system_prompt = f"""You are Prometheus, an AI financial advisor for the Nester DeFi platform.
+
+    dynamic_system_prompt = f"""You are Prometheus, an AI financial advisor for the
+Nester DeFi platform.
 
 {context_block}
 
 {risk_profile_block}
 
 ## Nester Platform Context
-- Vault types: Flexible (no lock), Fixed-30d (30-day lock, higher APY), 
+- Vault types: Flexible (no lock), Fixed-30d (30-day lock, higher APY),
   Fixed-90d (90-day lock, highest APY)
 - Rebalancing threshold: triggered when allocation drift exceeds 10%
 - Fee structure: 0.5% management fee on yield
 - Protocols supported: Aave, Blend, Compound
 
-Provide personalized, data-driven advice based on the user's actual positions 
-and current market conditions. Always cite specific numbers from their portfolio."""
+Provide personalized, data-driven advice based on user positions
+and current market conditions. Always cite specific numbers from their
+portfolio."""
 
     messages = _to_anthropic_messages(history) + [
         {"role": "user", "content": message}

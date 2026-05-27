@@ -47,7 +47,7 @@ export default function AllocationPieChart({ data }: AllocationPieChartProps) {
           <Tooltip
             formatter={(value, name) => `${value}%`}
             contentStyle={{ maxWidth: 200 }}
-            labelFormatter={(label) => `${label} (${chartData.find(d => d.name === label)?.balance?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }))} | APY: ${chartData.find(d => d.name === label)?.apy?.toFixed(2)}%`}
+            labelFormatter={(label) => `${label} (${chartData.find(d => d.name === label)?.balance?.toLocaleString(undefined, { style: 'currency', currency: 'USD' })} | APY: ${chartData.find(d => d.name === label)?.apy?.toFixed(2)}%`)}
           />
           <Legend verticalAlign="bottom" height={36} />
         </PieChart>

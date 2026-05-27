@@ -47,7 +47,7 @@ class _RedisConversationStore:
         if not self._available:
             # Fallback to empty list if Redis not available
             return []
-            
+
         try:
             raw: str | None = self._client.get(self._key(user_id))  # type: ignore[assignment]
             if not raw:
@@ -68,7 +68,7 @@ class _RedisConversationStore:
         if not self._available:
             # Silently fail if Redis not available
             return
-            
+
         try:
             key = self._key(user_id)
             history = self.get(user_id)  # This will handle trimming
@@ -83,7 +83,7 @@ class _RedisConversationStore:
     def clear(self, user_id: str) -> None:
         if not self._available:
             return
-            
+
         try:
             self._client.delete(self._key(user_id))
         except Exception as exc:

@@ -1,3 +1,5 @@
+"use client";
+
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 
 interface DailySnapshot {
