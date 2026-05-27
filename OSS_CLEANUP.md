@@ -140,11 +140,12 @@
 
 ### 🟠 Fix Soon After Merge
 
-- [ ] **Add impairment regression test to vault contract.**
+- [x] **Add impairment regression test to vault contract.**
   File: `packages/contracts/contracts/vault/src/test.rs`
   The issue explicitly required: "User deposits at rate 1.0, rate halves (impairment) → zero performance fee."
   The code handles it correctly (`yield_part < 0` → fee skipped) but the test proving it is missing.
-  Add a test that simulates a loss scenario and asserts no performance fee is charged.
+  Added `impairment_charges_zero_performance_fee`: deposits at rate 1.0, halves the share price via a
+  negative `report_yield`, and asserts both the preview and the actual withdrawal charge no performance fee.
 
 ---
 
@@ -164,9 +165,11 @@
 
 ### 🟡 Polish
 
-- [ ] **Verify `cargo test -p vault-contract` passes in CI with vault_token.wasm artifact.**
+- [x] **Verify `cargo test -p vault-contract` passes in CI with vault_token.wasm artifact.**
   The contributor left this box unchecked in the PR test plan. Confirm integration tests
   are not silently passing vacuously due to missing WASM artifact.
+  CI now builds `vault_token.wasm`, asserts the artifact exists, runs the tests explicitly,
+  and fails the job if zero vault-contract tests execute (see `.github/workflows/ci.yml`).
 
 ---
 
