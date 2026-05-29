@@ -203,6 +203,72 @@ func nullString(value string) any {
 	return strings.TrimSpace(value)
 }
 
+// ListUserTransactions returns paginated transactions scoped to the given user
+// via a JOIN with the vaults table. Optional filters narrow by vault, type,
+// and status. Results are ordered by created_at DESC.
+func (r *TransactionRepository) ListUserTransactions(ctx context.Context, filter transaction.ListFilter) ([]transaction.Transaction, int, error) {
+	args := []any{filter.UserID.String()}
+	argIdx := 2
+
+	where := "v.user_id = $1 AND v.deleted_at IS NULL"
+
+	if filter.VaultID != (uuid.UUID{}) {
+		where += fmt.Sprintf(" AND t.vault_id = $%d", argIdx)
+		args = append(args, filter.VaultID.String())
+		argIdx++
+	}
+	if filter.Type != "" {
+		where += fmt.Sprintf(" AND t.type = $%d", argIdx)
+		args = append(args, filter.Type)
+		argIdx++
+	}
+	if filter.Status != "" {
+		where += fmt.Sprintf(" AND t.status = $%d", argIdx)
+		args = append(args, filter.Status)
+		argIdx++
+	}
+
+	countQuery := `SELECT COUNT(*) FROM transactions t JOIN vaults v ON t.vault_id = v.id WHERE ` + where
+	var total int
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, mapTransactionError(err)
+	}
+
+	listQuery := fmt.Sprintf(
+		`SELECT t.id, t.vault_id, t.type, t.amount, t.currency, t.tx_hash, t.status, t.error_reason, t.created_at, t.updated_at, t.confirmed_at
+		 FROM transactions t
+		 JOIN vaults v ON t.vault_id = v.id
+		 WHERE %s
+		 ORDER BY t.created_at DESC
+		 LIMIT $%d OFFSET $%d`,
+		where, argIdx, argIdx+1,
+	) // #nosec G201 -- where clause built from parameterised fragments only
+	args = append(args, filter.Limit, filter.Offset)
+
+	rows, err := r.db.QueryContext(ctx, listQuery, args...)
+	if err != nil {
+		return nil, 0, mapTransactionError(err)
+	}
+	defer rows.Close()
+
+	var txns []transaction.Transaction
+	for rows.Next() {
+		model, err := scanTransaction(rows)
+		if err != nil {
+			return nil, 0, mapTransactionError(err)
+		}
+		txns = append(txns, model)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, mapTransactionError(err)
+	}
+	if txns == nil {
+		txns = []transaction.Transaction{}
+	}
+
+	return txns, total, nil
+}
+
 func mapTransactionError(err error) error {
 	if err == nil {
 		return nil
