@@ -48,6 +48,7 @@ func (h *VaultHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/vaults", h.createVault)
 	mux.HandleFunc("GET /api/v1/vaults/{id}", h.getVault)
 	mux.HandleFunc("GET /api/v1/vaults/{id}/allocations", h.getAllocations)
+	mux.HandleFunc("GET /api/v1/vaults/{id}/my-position", h.getMyPosition)
 	mux.HandleFunc("GET /api/v1/vaults", h.listUserVaults)
 	mux.HandleFunc("GET /api/v1/vaults/all", h.listVaults)
 	mux.HandleFunc("POST /api/v1/vaults/{id}/deposit", h.depositToVault)

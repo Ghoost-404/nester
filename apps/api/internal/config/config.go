@@ -404,6 +404,14 @@ func (c *Config) validate(loader *envLoader) {
 	if c.transactionPoller.minAge < 0 {
 		loader.addError("TX_POLLER_MIN_AGE must not be negative")
 	}
+
+	// Require at least one payment provider key in production/staging so
+	// offramp features (bank list, account resolution) work at deploy time
+	// rather than failing silently when a user first triggers them.
+	if (c.environment == "production" || c.environment == "staging") &&
+		c.bank.paystackKey == "" && c.bank.flutterwaveKey == "" {
+		loader.addError("at least one of PAYSTACK_SECRET_KEY or FLUTTERWAVE_SECRET_KEY must be set in production")
+	}
 }
 
 func validateAllowedOrigins(environment string, origins []string, loader *envLoader) {

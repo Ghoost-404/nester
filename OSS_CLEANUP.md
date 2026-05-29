@@ -72,16 +72,10 @@
 
 ### 🟠 Fix Soon After Merge
 
-- [ ] **`GetRoles` passes `id.String()` instead of the raw `uuid.UUID` to pgx.**
+ - [x] **`GetRoles` passes `id.String()` instead of the raw `uuid.UUID` to pgx.** (resolved in commit `e8072f4`)
   File: `apps/api/internal/repository/postgres/user_repository.go`
-  pgx v5 handles `uuid.UUID` natively. Passing `.String()` forces string serialisation and an
-  implicit server-side cast. The rest of the repo passes UUID values directly. Change to:
-  ```go
-  rows, err := r.db.QueryContext(ctx,
-      `SELECT role FROM user_roles WHERE user_id = $1 ORDER BY role`,
-      id,   // not id.String()
-  )
-  ```
+  pgx v5 handles `uuid.UUID` natively. Passing `.String()` forced string serialisation and an
+  implicit server-side cast. This PR now passes `uuid.UUID` values directly.
 
 - [ ] **`bootstrap-admin` does not call `db.Ping()` after `sql.Open()`.**
   File: `apps/api/cmd/bootstrap-admin/main.go`
@@ -221,12 +215,10 @@
   This will confuse any migration runner that applies files in lexicographic order. Rename one of
   them and renumber consistently. Needs care — check if the runner is order-sensitive before touching.
 
-- [ ] **No migration runner is wired into the Go API startup.**
-  `scripts/seed.sql` is used as a workaround (it runs via Docker's `initdb`). This means:
-  - New migrations added after the initial seed are NOT applied automatically in the dev environment.
-  - Developers must run `make dev-reset` (wipes data) to pick up new schema changes.
-  Long-term: wire `golang-migrate` or equivalent into the API startup behind a flag
-  (`RUN_MIGRATIONS=true`) so `make dev` applies incremental migrations without data loss.
+- [x] **No migration runner is wired into the Go API startup.**
+  Resolved: `golang-migrate` runs on API startup when `RUN_MIGRATIONS=true` (set in
+  `docker-compose.yml` for local dev). Pending migrations apply incrementally on `make dev`
+  without requiring `make dev-reset`. See `apps/api/migrations/README.md`.
 
 ---
 

@@ -46,6 +46,16 @@ type Transaction struct {
 	ConfirmedAt *time.Time        `json:"confirmed_at,omitempty"`
 }
 
+// ListFilter drives paginated, filtered transaction listing for a user.
+type ListFilter struct {
+	UserID  uuid.UUID
+	VaultID uuid.UUID // zero value means all vaults
+	Type    string    // "deposit" | "withdrawal" | "" for all
+	Status  string    // "pending" | "completed" | "failed" | "" for all
+	Limit   int
+	Offset  int
+}
+
 type Repository interface {
 	Upsert(ctx context.Context, model Transaction) (Transaction, error)
 	GetByHash(ctx context.Context, hash string) (Transaction, error)
@@ -55,4 +65,7 @@ type Repository interface {
 	// to find transactions that have had time to settle on-chain but were
 	// never reconciled (e.g. the client never polled GET /transactions/{hash}).
 	ListPendingOlderThan(ctx context.Context, cutoff time.Time) ([]Transaction, error)
+	// ListUserTransactions returns paginated transactions scoped to the user,
+	// with optional filtering by vault, type, and status.
+	ListUserTransactions(ctx context.Context, filter ListFilter) ([]Transaction, int, error)
 }
