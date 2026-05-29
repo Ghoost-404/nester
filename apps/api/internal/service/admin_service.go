@@ -16,8 +16,13 @@ import (
 )
 
 var (
-	ErrInvalidAdminInput = errors.New("invalid admin input")
+	ErrInvalidAdminInput    = errors.New("invalid admin input")
+	ErrRebalanceInFlight    = errors.New("rebalance already in flight for this vault")
+	ErrChainNotConfigured   = errors.New("on-chain operator not configured")
+	ErrRebalanceNotEligible = errors.New("vault is not eligible for rebalance")
 )
+
+const rebalanceEstimatedCompletionMS = int64(5000)
 
 const (
 	dashboardCacheTTL   = 2 * time.Minute
@@ -27,6 +32,8 @@ const (
 type VaultChainInvoker interface {
 	PauseVault(ctx context.Context, contractAddress string) error
 	UnpauseVault(ctx context.Context, contractAddress string) error
+	RebalanceVault(ctx context.Context, contractAddress string) (txHash string, err error)
+	SimulateRebalanceVault(ctx context.Context, contractAddress string) error
 }
 
 // NoopVaultChainInvoker is the default invoker used when no on-chain
@@ -35,6 +42,12 @@ type NoopVaultChainInvoker struct{}
 
 func (NoopVaultChainInvoker) PauseVault(_ context.Context, _ string) error   { return nil }
 func (NoopVaultChainInvoker) UnpauseVault(_ context.Context, _ string) error { return nil }
+func (NoopVaultChainInvoker) RebalanceVault(_ context.Context, _ string) (string, error) {
+	return "", ErrChainNotConfigured
+}
+func (NoopVaultChainInvoker) SimulateRebalanceVault(_ context.Context, _ string) error {
+	return ErrChainNotConfigured
+}
 
 type AdminService struct {
 	repository            admindomain.Repository

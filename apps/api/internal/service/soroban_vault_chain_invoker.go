@@ -30,6 +30,14 @@ func (s *SorobanVaultChainInvoker) UnpauseVault(ctx context.Context, contractAdd
 	return s.invoker.InvokeVoidFunction(ctx, contractAddress, "unpause")
 }
 
+func (s *SorobanVaultChainInvoker) RebalanceVault(ctx context.Context, contractAddress string) (string, error) {
+	return s.invoker.InvokeVoidFunctionSubmit(ctx, contractAddress, "rebalance")
+}
+
+func (s *SorobanVaultChainInvoker) SimulateRebalanceVault(ctx context.Context, contractAddress string) error {
+	return s.invoker.SimulateVoidFunction(ctx, contractAddress, "rebalance")
+}
+
 // DepositToVault invokes the vault contract's deposit function with the
 // operator as both caller and depositing user, passing amount and zero
 // as the minimum-shares-out slippage guard.

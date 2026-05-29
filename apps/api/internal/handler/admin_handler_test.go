@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,6 +165,24 @@ func (s *adminHandlerStubService) ListUsers(context.Context, admindomain.UserLis
 
 func (s *adminHandlerStubService) GetDetailedHealth(context.Context) (admindomain.DetailedHealth, error) {
 	return s.health, nil
+}
+
+func (s *adminHandlerStubService) TriggerRebalance(_ context.Context, id uuid.UUID, req admindomain.RebalanceRequest) (admindomain.RebalanceResponse, error) {
+	if _, ok := s.vaults[id]; !ok {
+		return admindomain.RebalanceResponse{}, vault.ErrVaultNotFound
+	}
+	if req.DryRun {
+		return admindomain.RebalanceResponse{
+			Status:      "dry_run",
+			RebalanceID: uuid.New(),
+		}, nil
+	}
+	return admindomain.RebalanceResponse{
+		Status:                "submitted",
+		TxHash:                "test-hash",
+		RebalanceID:           uuid.New(),
+		EstimatedCompletionMS: 5000,
+	}, nil
 }
 
 func TestAdminHandlerGetDashboard(t *testing.T) {
@@ -383,6 +402,46 @@ func TestAdminHandlerAuthListPauseVerify(t *testing.T) {
 	}
 }
 
+func TestAdminHandlerRebalanceAuth(t *testing.T) {
+	vaultID := uuid.New()
+	h := NewAdminHandler(newAdminHandlerStubService(vaultID))
+	mux := http.NewServeMux()
+	h.Register(mux)
+
+	rules := []middleware.RouteRule{
+		{PathPrefix: "/api/v1/admin/", Role: "admin"},
+	}
+	protected := middleware.Authenticate("admin-test-secret", rules)(mux)
+	server := httptest.NewServer(protected)
+	defer server.Close()
+
+	nonAdminToken := makeAdminToken(t, "admin-test-secret", []string{"operator"})
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/admin/vaults/"+vaultID.String()+"/rebalance", strings.NewReader(`{"strategy":"auto","dry_run":true}`))
+	req.Header.Set("Authorization", "Bearer "+nonAdminToken)
+	req.Header.Set("Content-Type", "application/json")
+	nonAdminResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST rebalance as non-admin failed: %v", err)
+	}
+	defer nonAdminResp.Body.Close()
+	if nonAdminResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin rebalance status = %d, want 403", nonAdminResp.StatusCode)
+	}
+
+	adminToken := makeAdminToken(t, "admin-test-secret", []string{"admin"})
+	adminReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/admin/vaults/"+vaultID.String()+"/rebalance", strings.NewReader(`{"strategy":"auto","dry_run":true}`))
+	adminReq.Header.Set("Authorization", "Bearer "+adminToken)
+	adminReq.Header.Set("Content-Type", "application/json")
+	adminResp, err := http.DefaultClient.Do(adminReq)
+	if err != nil {
+		t.Fatalf("POST rebalance as admin failed: %v", err)
+	}
+	defer adminResp.Body.Close()
+	if adminResp.StatusCode != http.StatusOK {
+		t.Fatalf("admin rebalance status = %d, want 200", adminResp.StatusCode)
+	}
+}
+
 func makeAdminToken(t *testing.T, secret string, roles []string) string {
 	t.Helper()
 	signed, err := auth.MakeJWT(auth.Claims{
@@ -421,4 +480,7 @@ func (adminErrStub) ListUsers(context.Context, admindomain.UserListFilter) ([]ad
 }
 func (adminErrStub) GetDetailedHealth(context.Context) (admindomain.DetailedHealth, error) {
 	return admindomain.DetailedHealth{}, nil
+}
+func (adminErrStub) TriggerRebalance(context.Context, uuid.UUID, admindomain.RebalanceRequest) (admindomain.RebalanceResponse, error) {
+	return admindomain.RebalanceResponse{}, nil
 }

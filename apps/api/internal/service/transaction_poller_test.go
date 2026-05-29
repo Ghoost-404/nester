@@ -61,6 +61,10 @@ func (r *fakeTransactionRepo) UpdateStatus(_ context.Context, hash string, statu
 	return tx, nil
 }
 
+func (r *fakeTransactionRepo) ListUserTransactions(context.Context, transaction.ListFilter) ([]transaction.Transaction, int, error) {
+	return nil, 0, nil
+}
+
 func (r *fakeTransactionRepo) ListPendingOlderThan(_ context.Context, cutoff time.Time) ([]transaction.Transaction, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -48,14 +48,42 @@ func NewContractInvoker(rpcURL, horizonURL, networkPassphrase, operatorSecret st
 
 // InvokeVoidFunction calls a contract function with signature (caller: Address).
 func (c *ContractInvoker) InvokeVoidFunction(ctx context.Context, contractAddress, functionName string) error {
-	contractScAddr, err := contractAddressToXDR(contractAddress)
+	hash, err := c.InvokeVoidFunctionSubmit(ctx, contractAddress, functionName)
 	if err != nil {
 		return err
+	}
+	return c.waitForTx(ctx, hash)
+}
+
+// SimulateVoidFunction dry-runs a (caller: Address) contract call without submitting.
+func (c *ContractInvoker) SimulateVoidFunction(ctx context.Context, contractAddress, functionName string) error {
+	txB64, err := c.buildUnsignedVoidInvoke(ctx, contractAddress, functionName)
+	if err != nil {
+		return err
+	}
+	_, err = c.simulate(ctx, txB64)
+	return err
+}
+
+// InvokeVoidFunctionSubmit simulates, signs, and submits a void contract call.
+// Returns the transaction hash without waiting for ledger confirmation.
+func (c *ContractInvoker) InvokeVoidFunctionSubmit(ctx context.Context, contractAddress, functionName string) (string, error) {
+	signedB64, err := c.signVoidInvoke(ctx, contractAddress, functionName)
+	if err != nil {
+		return "", err
+	}
+	return c.send(ctx, signedB64)
+}
+
+func (c *ContractInvoker) buildUnsignedVoidInvoke(ctx context.Context, contractAddress, functionName string) (string, error) {
+	contractScAddr, err := contractAddressToXDR(contractAddress)
+	if err != nil {
+		return "", err
 	}
 
 	callerScAddr, err := accountAddressToXDR(c.kp.Address())
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	hostFn := xdr.HostFunction{
@@ -74,7 +102,7 @@ func (c *ContractInvoker) InvokeVoidFunction(ctx context.Context, contractAddres
 
 	seq, err := c.getSequenceNumber(ctx)
 	if err != nil {
-		return fmt.Errorf("get sequence number: %w", err)
+		return "", fmt.Errorf("get sequence number: %w", err)
 	}
 
 	sourceAccount := txnbuild.NewSimpleAccount(c.kp.Address(), seq)
@@ -91,26 +119,37 @@ func (c *ContractInvoker) InvokeVoidFunction(ctx context.Context, contractAddres
 		Preconditions: txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(int64((5 * time.Minute).Seconds()))},
 	})
 	if err != nil {
-		return fmt.Errorf("build transaction: %w", err)
+		return "", fmt.Errorf("build transaction: %w", err)
 	}
 
-	txB64, err := tx.Base64()
+	return tx.Base64()
+}
+
+func (c *ContractInvoker) signVoidInvoke(ctx context.Context, contractAddress, functionName string) (string, error) {
+	txB64, err := c.buildUnsignedVoidInvoke(ctx, contractAddress, functionName)
 	if err != nil {
-		return fmt.Errorf("encode transaction: %w", err)
+		return "", err
 	}
 
 	simResult, err := c.simulate(ctx, txB64)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	// Decode the SorobanTransactionData returned by simulation.
+	generic, err := txnbuild.TransactionFromXDR(txB64)
+	if err != nil {
+		return "", fmt.Errorf("parse tx: %w", err)
+	}
+	tx, ok := generic.Transaction()
+	if !ok {
+		return "", errors.New("expected a transaction, got fee-bump")
+	}
+
 	var sorobanData xdr.SorobanTransactionData
 	if err := xdr.SafeUnmarshalBase64(simResult.TransactionData, &sorobanData); err != nil {
-		return fmt.Errorf("decode soroban data: %w", err)
+		return "", fmt.Errorf("decode soroban data: %w", err)
 	}
 
-	// Patch the envelope: set soroban data and bump fee.
 	envelope := tx.ToXDR()
 	envelope.V1.Tx.Ext = xdr.TransactionExt{
 		V:           1,
@@ -118,42 +157,31 @@ func (c *ContractInvoker) InvokeVoidFunction(ctx context.Context, contractAddres
 	}
 	minFee, err := strconv.ParseInt(simResult.MinResourceFee, 10, 64)
 	if err != nil {
-		return fmt.Errorf("parse simulation min resource fee %q: %w", simResult.MinResourceFee, err)
+		return "", fmt.Errorf("parse simulation min resource fee %q: %w", simResult.MinResourceFee, err)
 	}
 	envelope.V1.Tx.Fee = xdr.Uint32(txnbuild.MinBaseFee + minFee)
 
-	// Re-parse from the patched XDR so txnbuild can sign it.
 	envB64, err := xdr.MarshalBase64(envelope)
 	if err != nil {
-		return fmt.Errorf("encode patched envelope: %w", err)
+		return "", fmt.Errorf("encode patched envelope: %w", err)
 	}
 
-	generic, err := txnbuild.TransactionFromXDR(envB64)
+	generic, err = txnbuild.TransactionFromXDR(envB64)
 	if err != nil {
-		return fmt.Errorf("parse patched tx: %w", err)
+		return "", fmt.Errorf("parse patched tx: %w", err)
 	}
 
 	inner, ok := generic.Transaction()
 	if !ok {
-		return errors.New("expected a transaction, got fee-bump")
+		return "", errors.New("expected a transaction, got fee-bump")
 	}
 
 	signed, err := inner.Sign(c.networkPassphrase, c.kp)
 	if err != nil {
-		return fmt.Errorf("sign transaction: %w", err)
+		return "", fmt.Errorf("sign transaction: %w", err)
 	}
 
-	signedB64, err := signed.Base64()
-	if err != nil {
-		return fmt.Errorf("encode signed transaction: %w", err)
-	}
-
-	hash, err := c.send(ctx, signedB64)
-	if err != nil {
-		return err
-	}
-
-	return c.waitForTx(ctx, hash)
+	return signed.Base64()
 }
 
 // ── JSON-RPC helpers ──────────────────────────────────────────────────────────
