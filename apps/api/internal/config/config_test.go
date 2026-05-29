@@ -58,6 +58,7 @@ func TestLoadFromDotEnv(t *testing.T) {
 		"STELLAR_HORIZON_URL=https://horizon.example.com",
 		"AUTH_JWT_SECRET=this-is-a-very-secret-jwt-key-that-is-at-least-thirty-two-bytes",
 		"ALLOWED_ORIGINS=https://app.example.com",
+		"PAYSTACK_SECRET_KEY=sk_test_dummy",
 	}, "\n"))
 
 	chdir(t, dir)
@@ -210,6 +211,7 @@ func TestLoadEnvVarsTakePrecedenceOverDotEnv(t *testing.T) {
 	t.Setenv("STELLAR_RPC_URL", "https://envvar-rpc.example.com")
 	t.Setenv("STELLAR_HORIZON_URL", "https://envvar-horizon.example.com")
 	t.Setenv("ALLOWED_ORIGINS", "https://app.example.com")
+	t.Setenv("PAYSTACK_SECRET_KEY", "sk_test_dummy")
 
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".env"), strings.Join([]string{
@@ -254,6 +256,7 @@ func TestLoadConcurrentCalls(t *testing.T) {
 		"STELLAR_HORIZON_URL=https://horizon.example.com",
 		"AUTH_JWT_SECRET=this-is-a-very-secret-jwt-key-that-is-at-least-thirty-two-bytes",
 		"ALLOWED_ORIGINS=https://app.example.com",
+		"PAYSTACK_SECRET_KEY=sk_test_dummy",
 	}, "\n"))
 	chdir(t, dir)
 
@@ -304,6 +307,7 @@ func TestLoadProcessEnvOverridesDotEnvAndFallsBack(t *testing.T) {
 	t.Setenv("SERVER_PORT", "9091")
 	t.Setenv("DATABASE_DSN", "postgres://env:secret@localhost:5432/nester?sslmode=disable")
 	t.Setenv("ALLOWED_ORIGINS", "https://app.example.com")
+	t.Setenv("PAYSTACK_SECRET_KEY", "sk_test_dummy")
 
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".env"), strings.Join([]string{
@@ -478,6 +482,7 @@ func TestLoadProductionMode(t *testing.T) {
 	requiredEnv(t)
 	t.Setenv("APP_ENV", "production")
 	t.Setenv("ALLOWED_ORIGINS", "https://app.example.com")
+	t.Setenv("PAYSTACK_SECRET_KEY", "sk_test_dummy")
 
 	chdir(t, t.TempDir())
 
@@ -880,6 +885,96 @@ func TestLoadAllowedOriginsRejectsMalformed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLoadPaymentProviderKeysValidation verifies that production/staging requires
+// at least one payment provider key, while development does not.
+func TestLoadPaymentProviderKeysValidation(t *testing.T) {
+	t.Run("production fails when both keys are empty", func(t *testing.T) {
+		baseEnv(t)
+		requiredEnv(t)
+		t.Setenv("APP_ENV", "production")
+		t.Setenv("ALLOWED_ORIGINS", "https://app.example.com")
+
+		chdir(t, t.TempDir())
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail when both provider keys are empty in production")
+		}
+		if !strings.Contains(err.Error(), "PAYSTACK_SECRET_KEY") {
+			t.Fatalf("expected error to mention PAYSTACK_SECRET_KEY, got %q", err.Error())
+		}
+	})
+
+	t.Run("staging fails when both keys are empty", func(t *testing.T) {
+		baseEnv(t)
+		requiredEnv(t)
+		t.Setenv("APP_ENV", "staging")
+		t.Setenv("ALLOWED_ORIGINS", "https://app.example.com")
+
+		chdir(t, t.TempDir())
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail when both provider keys are empty in staging")
+		}
+		if !strings.Contains(err.Error(), "PAYSTACK_SECRET_KEY") {
+			t.Fatalf("expected error to mention PAYSTACK_SECRET_KEY, got %q", err.Error())
+		}
+	})
+
+	t.Run("production succeeds with paystack key set", func(t *testing.T) {
+		baseEnv(t)
+		requiredEnv(t)
+		t.Setenv("APP_ENV", "production")
+		t.Setenv("ALLOWED_ORIGINS", "https://app.example.com")
+		t.Setenv("PAYSTACK_SECRET_KEY", "sk_test_dummy")
+
+		chdir(t, t.TempDir())
+
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+	})
+
+	t.Run("production succeeds with flutterwave key set", func(t *testing.T) {
+		baseEnv(t)
+		requiredEnv(t)
+		t.Setenv("APP_ENV", "production")
+		t.Setenv("ALLOWED_ORIGINS", "https://app.example.com")
+		t.Setenv("FLUTTERWAVE_SECRET_KEY", "FLWSECK_TEST-dummy")
+
+		chdir(t, t.TempDir())
+
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+	})
+
+	t.Run("development succeeds without any provider key", func(t *testing.T) {
+		baseEnv(t)
+		requiredEnv(t)
+		t.Setenv("APP_ENV", "development")
+
+		chdir(t, t.TempDir())
+
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load() error = %v (dev should not require provider keys)", err)
+		}
+	})
+
+	t.Run("test env succeeds without any provider key", func(t *testing.T) {
+		baseEnv(t)
+		requiredEnv(t)
+		t.Setenv("APP_ENV", "test")
+
+		chdir(t, t.TempDir())
+
+		if _, err := Load(); err != nil {
+			t.Fatalf("Load() error = %v (test env should not require provider keys)", err)
+		}
+	})
 }
 
 // TestLoadAllowedOriginsOptionalInDevelopment verifies development loads

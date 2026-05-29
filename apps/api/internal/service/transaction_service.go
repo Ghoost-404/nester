@@ -224,6 +224,59 @@ func (s *TransactionService) lookupHorizonTransaction(ctx context.Context, hash 
 	return transaction.StatusFailed, &confirmedAt, strings.TrimSpace(payload.ResultXdr), nil
 }
 
+const (
+	defaultTransactionListLimit = 20
+	maxTransactionListLimit     = 100
+)
+
+// ListUserTransactionsInput carries validated query params for the list endpoint.
+type ListUserTransactionsInput struct {
+	UserID  uuid.UUID
+	VaultID uuid.UUID // optional
+	Type    string    // "deposit" | "withdrawal" | ""
+	Status  string    // "pending" | "confirmed" | "failed" | "" — "confirmed" maps to "completed"
+	Limit   int
+	Offset  int
+}
+
+// ListUserTransactions returns paginated transactions for the authenticated user.
+// The "confirmed" status value accepted from callers is mapped to the internal
+// "completed" value before querying.
+func (s *TransactionService) ListUserTransactions(ctx context.Context, input ListUserTransactionsInput) ([]transaction.Transaction, int, error) {
+	if input.UserID == uuid.Nil {
+		return nil, 0, transaction.ErrInvalidTransaction
+	}
+
+	limit := input.Limit
+	if limit <= 0 {
+		limit = defaultTransactionListLimit
+	}
+	if limit > maxTransactionListLimit {
+		limit = maxTransactionListLimit
+	}
+	offset := input.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Map external "confirmed" status to internal "completed".
+	dbStatus := input.Status
+	if dbStatus == "confirmed" {
+		dbStatus = string(transaction.StatusCompleted)
+	}
+
+	filter := transaction.ListFilter{
+		UserID:  input.UserID,
+		VaultID: input.VaultID,
+		Type:    input.Type,
+		Status:  dbStatus,
+		Limit:   limit,
+		Offset:  offset,
+	}
+
+	return s.repository.ListUserTransactions(ctx, filter)
+}
+
 func isSupportedTransactionType(value transaction.TransactionType) bool {
 	switch value {
 	case transaction.TypeDeposit, transaction.TypeWithdrawal, transaction.TypeSettlement:
