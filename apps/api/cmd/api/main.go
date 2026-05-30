@@ -133,9 +133,12 @@ func run() error {
 
 	adminService := service.NewAdminService(
 		adminRepository,
+		vaultRepository,
 		chainInvoker,
 		cfg.Stellar().HorizonURL(),
 		cfg.SettlementProviderURL(),
+		cfg.Stellar().AllocationStrategyAddress(),
+		cfg.Allocation().MinWeightPercent(),
 	)
 	adminHandler := handler.NewAdminHandler(adminService)
 	adminHandler.SetEventSyncer(&stellarpkg.EventSyncer{
@@ -253,7 +256,22 @@ func run() error {
 	riskService := services.NewRiskService(vaultRepository)
 	riskHandler := handler.NewRiskHandler(riskService)
 	riskHandler.Register(mux)
-	
+
+	// Vault analytics (APY volatility, Sharpe, Sortino, drawdown, win rate)
+	vaultAnalyticsSvc := service.NewVaultAnalyticsService(performanceRepository)
+	vaultAnalyticsHandler := handler.NewVaultAnalyticsHandler(vaultAnalyticsSvc)
+	vaultAnalyticsHandler.Register(mux)
+
+	// Yield opportunities (DeFiLlama Stellar pools)
+	yieldSvc := service.NewYieldService("")
+	yieldHandler := handler.NewYieldHandler(yieldSvc)
+	yieldHandler.Register(mux)
+
+	// User watchlist
+	watchlistSvc := service.NewWatchlistService(db)
+	watchlistHandler := handler.NewWatchlistHandler(watchlistSvc)
+	watchlistHandler.Register(mux)
+
 	bankHandler.Register(mux)
 
 	mux.HandleFunc("GET /ws", wsHub.ServeWs)
