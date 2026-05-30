@@ -18,6 +18,7 @@ type Config struct {
 	server                ServerConfig
 	database              DatabaseConfig
 	stellar               StellarConfig
+	intelligence          IntelligenceConfig
 	allocation            AllocationConfig
 	redis                 RedisConfig
 	settlementProviderURL string
@@ -79,6 +80,12 @@ type StellarConfig struct {
 
 type AllocationConfig struct {
 	minWeightPercent int
+}
+
+type IntelligenceConfig struct {
+	baseURL       string
+	serviceAPIKey string
+	timeout       time.Duration
 }
 
 type AuthConfig struct {
@@ -151,6 +158,11 @@ func Load() (*Config, error) {
 			stellarUSDCIssuer:         loader.stringDefault("STELLAR_USDC_ISSUER", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
 			allocationStrategyAddress: loader.stringDefault("STELLAR_ALLOCATION_STRATEGY_ADDRESS", ""),
 		},
+		intelligence: IntelligenceConfig{
+			baseURL:       loader.stringDefault("INTELLIGENCE_BASE_URL", "http://localhost:8000"),
+			serviceAPIKey: loader.stringDefault("INTELLIGENCE_SERVICE_API_KEY", ""),
+			timeout:       loader.durationDefault("INTELLIGENCE_TIMEOUT", 10*time.Second),
+		},
 		allocation: AllocationConfig{
 			minWeightPercent: loader.intDefault("MIN_ALLOCATION_WEIGHT", 5),
 		},
@@ -222,6 +234,22 @@ func (c Config) Stellar() StellarConfig {
 
 func (c Config) Allocation() AllocationConfig {
 	return c.allocation
+}
+
+func (c Config) Intelligence() IntelligenceConfig {
+	return c.intelligence
+}
+
+func (i IntelligenceConfig) BaseURL() string {
+	return i.baseURL
+}
+
+func (i IntelligenceConfig) ServiceAPIKey() string {
+	return i.serviceAPIKey
+}
+
+func (i IntelligenceConfig) Timeout() time.Duration {
+	return i.timeout
 }
 
 func (s StellarConfig) USDCIssuer() string {

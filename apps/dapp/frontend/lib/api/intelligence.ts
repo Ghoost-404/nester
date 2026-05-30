@@ -27,6 +27,51 @@ export interface ChatMessage {
   content: string
 }
 
+export interface Milestone {
+    date: string;
+    target_amount: number;
+    description: string;
+}
+
+export interface SavingsPlan {
+    user_id: string;
+    vault_id: string;
+    goal_amount: number;
+    current_balance: number;
+    start_date: string;
+    target_date: string;
+    status: "on_track" | "behind_schedule" | "ahead_of_schedule";
+    next_milestone: Milestone | null;
+}
+
+export interface SavingsPlanRequest {
+    goal_usdc: number;
+    time_horizon_months: number;
+    max_monthly_contribution_usdc: number;
+    vault_id?: string;
+}
+
+export interface ScheduleEntry {
+    month: number;
+    deposit: number;
+    expected_balance: number;
+    yield_earned: number;
+}
+
+export interface MilestoneProjection {
+    month: number;
+    expected_balance: number;
+}
+
+export interface SavingsPlanResponse {
+    achievable: boolean;
+    required_monthly_deposit: number;
+    monthly_schedule: ScheduleEntry[];
+    total_yield_earned: number;
+    narrative: string;
+    milestones: MilestoneProjection[];
+}
+
 // ── Base fetch helper ─────────────────────────────────────────────────────────
 
 const BASE = '/api/v1'
@@ -44,7 +89,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── intelligence client ───────────────────────────────────────────────────────
 
-export const intelligence = {
+export const intelligenceApi = {
   /** Per-vault AI commentary and recommendations. */
   getVaultRecommendations: (vaultId: string) =>
     apiFetch<VaultRecommendation>(`/vaults/${vaultId}/recommendations`),
@@ -57,8 +102,22 @@ export const intelligence = {
   getPortfolioInsights: (userId: string) =>
     apiFetch<PortfolioInsight[]>(`/portfolio/${userId}/insights`),
 
+  /** Fetch the active savings plan for the authenticated user. */
+  getSavingsPlan: () =>
+    apiFetch<SavingsPlan | null>('/intelligence/savings-plan'),
+
+  /** Generate a concrete, personalized deposit schedule based on user goals. */
+  createSavingsPlan: (request: SavingsPlanRequest) =>
+    apiFetch<SavingsPlanResponse>('/intelligence/savings-plan', {
+        method: 'POST',
+        body: JSON.stringify(request),
+    }),
+
   sendMessage: (userId: string, message: string): EventSource => {
     const params = new URLSearchParams({ userId, message })
     return new EventSource(`${BASE}/intelligence/chat?${params}`)
   },
 }
+
+// Export as default or intelligence for backward compatibility if needed
+export const intelligence = intelligenceApi;

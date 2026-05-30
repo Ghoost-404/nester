@@ -273,6 +273,15 @@ func run() error {
 
 	bankHandler.Register(mux)
 
+	// Intelligence / Prometheus AI
+	prometheusClient := service.NewPrometheusClient(service.PrometheusConfig{
+		BaseURL: cfg.Intelligence().BaseURL(),
+		APIKey:  cfg.Intelligence().ServiceAPIKey(),
+		Timeout: cfg.Intelligence().Timeout(),
+	})
+	intelligenceHandler := handler.NewIntelligenceHandler(prometheusClient)
+	intelligenceHandler.Register(mux)
+
 	mux.HandleFunc("GET /ws", wsHub.ServeWs)
 
 	authRules := []middleware.RouteRule{

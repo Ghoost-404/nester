@@ -28,6 +28,7 @@ import { OnboardingProvider } from "@/hooks/useOnboarding";
 import { NetworkProvider } from "@/context/NetworkProvider";
 import { NetworkBanner } from "@/components/network/NetworkSelector";
 import { PrometheusChatbot } from "@/components/ai/prometheusChatbot";
+import { A11yAudit } from "@/components/A11yAudit";
 
 export default function RootLayout({
     children,
@@ -40,6 +41,7 @@ export default function RootLayout({
                 suppressHydrationWarning
                 className={`${inter.className} ${inter.variable} antialiased`}
             >
+                <A11yAudit />
                 <NetworkProvider>
                     <SettingsProvider>
                         <WalletProvider>

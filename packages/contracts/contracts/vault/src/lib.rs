@@ -863,6 +863,7 @@ impl VaultContract {
         // Apply each delta to source-allocation bookkeeping. Min-rebalance
         // skip is per-source so we don't pay tx fees for dust adjustments.
         let mut applied = Vec::new(&env);
+        let mut total_delta: i128 = 0;
         for d in deltas.iter() {
             if d.delta.abs() < MIN_REBALANCE_AMOUNT {
                 continue;
@@ -880,7 +881,13 @@ impl VaultContract {
             }
 
             set_source_allocation(&env, &d.source_id, new_amount);
+            total_delta += d.delta;
             applied.push_back(d);
+        }
+
+        if total_delta < 0 {
+            let current_reserves = get_vault_liquid_reserves(&env);
+            set_vault_liquid_reserves(&env, current_reserves - total_delta);
         }
 
         env.storage().instance().set(&DataKey::LastRebalanceAt, &now);
