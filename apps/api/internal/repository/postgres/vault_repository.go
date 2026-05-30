@@ -226,8 +226,8 @@ func (r *VaultRepository) UpdateVaultBalances(ctx context.Context, id uuid.UUID,
 	return nil
 }
 
-func (r *VaultRepository) RecordDeposit(ctx context.Context, id uuid.UUID, amount decimal.Decimal) error {
-	if amount.Cmp(decimal.Zero) <= 0 {
+func (r *VaultRepository) RecordDeposit(ctx context.Context, id uuid.UUID, record vault.TransactionRecord) error {
+	if record.Amount.Cmp(decimal.Zero) <= 0 {
 		return vault.ErrInvalidAmount
 	}
 
@@ -245,7 +245,7 @@ func (r *VaultRepository) RecordDeposit(ctx context.Context, id uuid.UUID, amoun
 		     updated_at = NOW()
 		 WHERE id = $1 AND deleted_at IS NULL`,
 		id.String(),
-		amount.String(),
+		record.Amount.String(),
 	)
 	if err != nil {
 		return mapRepositoryError(err)
@@ -261,9 +261,17 @@ func (r *VaultRepository) RecordDeposit(ctx context.Context, id uuid.UUID, amoun
 
 	if _, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO vault_transactions (vault_id, type, amount) VALUES ($1, 'deposit', $2::numeric)`,
+		`INSERT INTO vault_transactions (
+			vault_id, user_id, type, amount, transaction_hash,
+			shares_minted_or_burned, share_price_at_time, fee_charged
+		) VALUES ($1, $2, 'deposit', $3::numeric, NULLIF($4, ''), $5::numeric, $6::numeric, $7::numeric)`,
 		id.String(),
-		amount.String(),
+		record.UserID.String(),
+		record.Amount.String(),
+		record.TransactionHash,
+		record.SharesMintedOrBurned.String(),
+		record.SharePriceAtTime.String(),
+		record.FeeCharged.String(),
 	); err != nil {
 		return mapRepositoryError(err)
 	}
@@ -344,8 +352,8 @@ func (r *VaultRepository) UpdateVault(ctx context.Context, id uuid.UUID, contrac
 
 // RecordWithdrawal decrements current_balance atomically and writes a ledger
 // entry. It does NOT touch total_deposited (deposits are never reversed).
-func (r *VaultRepository) RecordWithdrawal(ctx context.Context, id uuid.UUID, amount decimal.Decimal) error {
-	if amount.Cmp(decimal.Zero) <= 0 {
+func (r *VaultRepository) RecordWithdrawal(ctx context.Context, id uuid.UUID, record vault.TransactionRecord) error {
+	if record.Amount.Cmp(decimal.Zero) <= 0 {
 		return vault.ErrInvalidAmount
 	}
 
@@ -362,7 +370,7 @@ func (r *VaultRepository) RecordWithdrawal(ctx context.Context, id uuid.UUID, am
 		     updated_at = NOW()
 		 WHERE id = $1 AND deleted_at IS NULL`,
 		id.String(),
-		amount.String(),
+		record.Amount.String(),
 	)
 	if err != nil {
 		return mapRepositoryError(err)
@@ -378,9 +386,17 @@ func (r *VaultRepository) RecordWithdrawal(ctx context.Context, id uuid.UUID, am
 
 	if _, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO vault_transactions (vault_id, type, amount) VALUES ($1, 'withdrawal', $2::numeric)`,
+		`INSERT INTO vault_transactions (
+			vault_id, user_id, type, amount, transaction_hash,
+			shares_minted_or_burned, share_price_at_time, fee_charged
+		) VALUES ($1, $2, 'withdrawal', $3::numeric, NULLIF($4, ''), $5::numeric, $6::numeric, $7::numeric)`,
 		id.String(),
-		amount.String(),
+		record.UserID.String(),
+		record.Amount.String(),
+		record.TransactionHash,
+		record.SharesMintedOrBurned.String(),
+		record.SharePriceAtTime.String(),
+		record.FeeCharged.String(),
 	); err != nil {
 		return mapRepositoryError(err)
 	}
@@ -471,6 +487,92 @@ func (r *VaultRepository) RecordHarvest(ctx context.Context, input vault.Harvest
 	return tx.Commit()
 }
 
+// ApplyConfirmedDeposit credits a vault's balance for a deposit that has been
+// confirmed on-chain. It is keyed by the Stellar transaction hash and is
+// idempotent: a second call with the same hash is a no-op (no balance change,
+// no duplicate ledger row), so the auto-confirmation worker can safely retry.
+// This is the only path that credits balance from a confirmed deposit —
+// balance is never moved at submission time.
+func (r *VaultRepository) ApplyConfirmedDeposit(ctx context.Context, id uuid.UUID, amount decimal.Decimal, txHash string) error {
+	return r.applyConfirmedBalanceChange(ctx, id, amount, txHash, "deposit")
+}
+
+// ApplyConfirmedWithdrawal debits a vault's balance for a withdrawal confirmed
+// on-chain. Idempotent on txHash, mirroring ApplyConfirmedDeposit.
+func (r *VaultRepository) ApplyConfirmedWithdrawal(ctx context.Context, id uuid.UUID, amount decimal.Decimal, txHash string) error {
+	return r.applyConfirmedBalanceChange(ctx, id, amount, txHash, "withdrawal")
+}
+
+func (r *VaultRepository) applyConfirmedBalanceChange(ctx context.Context, id uuid.UUID, amount decimal.Decimal, txHash, txType string) error {
+	if amount.Cmp(decimal.Zero) <= 0 {
+		return vault.ErrInvalidAmount
+	}
+	if strings.TrimSpace(txHash) == "" {
+		// Without a hash we cannot dedupe, and a confirmed on-chain change
+		// always has one. Refuse rather than risk a double credit.
+		return vault.ErrInvalidVault
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Claim the hash first. If another worker (or an earlier retry) already
+	// applied this transaction, the insert affects zero rows and we leave the
+	// balance untouched.
+	ledger, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO vault_transactions (vault_id, type, amount, transaction_hash)
+		 VALUES ($1, $2, $3::numeric, $4)
+		 ON CONFLICT (transaction_hash) DO NOTHING`,
+		id.String(),
+		txType,
+		amount.String(),
+		txHash,
+	)
+	if err != nil {
+		return mapRepositoryError(err)
+	}
+	inserted, err := ledger.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if inserted == 0 {
+		// Already applied for this hash — idempotent no-op.
+		return tx.Commit()
+	}
+
+	var balanceSQL string
+	if txType == "deposit" {
+		balanceSQL = `UPDATE vaults
+			 SET total_deposited = total_deposited + $2::numeric,
+			     current_balance = current_balance + $2::numeric,
+			     updated_at = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL`
+	} else {
+		balanceSQL = `UPDATE vaults
+			 SET current_balance = current_balance - $2::numeric,
+			     updated_at = NOW()
+			 WHERE id = $1 AND deleted_at IS NULL`
+	}
+
+	result, err := tx.ExecContext(ctx, balanceSQL, id.String(), amount.String())
+	if err != nil {
+		return mapRepositoryError(err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return vault.ErrVaultNotFound
+	}
+
+	return tx.Commit()
+}
+
 // SoftDeleteVault stamps deleted_at so reads exclude this vault going forward.
 func (r *VaultRepository) SoftDeleteVault(ctx context.Context, id uuid.UUID) error {
 	result, err := r.db.ExecContext(
@@ -503,6 +605,38 @@ func (r *VaultRepository) ListDeposits(ctx context.Context, vaultID uuid.UUID) (
 		 WHERE vault_id = $1 AND type = 'deposit'
 		 ORDER BY created_at DESC`,
 		vaultID.String(),
+	)
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	defer rows.Close()
+
+	txns := make([]vault.VaultTransaction, 0)
+	for rows.Next() {
+		txn, err := scanVaultTransaction(rows)
+		if err != nil {
+			return nil, err
+		}
+		txns = append(txns, txn)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return txns, nil
+}
+
+// ListUserVaultTransactions returns all deposit and withdrawal rows for a user in a vault.
+func (r *VaultRepository) ListUserVaultTransactions(ctx context.Context, userID uuid.UUID, vaultID uuid.UUID) ([]vault.VaultTransaction, error) {
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT id, vault_id, user_id, type, amount, COALESCE(transaction_hash, ''), shares_minted_or_burned, share_price_at_time, fee_charged, created_at
+		 FROM vault_transactions
+		 WHERE vault_id = $1 AND user_id = $2
+		 ORDER BY created_at ASC`,
+		vaultID.String(),
+		userID.String(),
 	)
 	if err != nil {
 		return nil, mapRepositoryError(err)

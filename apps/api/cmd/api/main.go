@@ -18,6 +18,7 @@ import (
 
 	"github.com/suncrestlabs/nester/apps/api/internal/auth"
 	"github.com/suncrestlabs/nester/apps/api/internal/config"
+	"github.com/suncrestlabs/nester/apps/api/internal/domain/transaction"
 	"github.com/golang-migrate/migrate/v4"
 	migratedb "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -100,6 +101,9 @@ func run() error {
 
 	transactionRepository := postgres.NewTransactionRepository(db)
 	transactionService := service.NewTransactionService(transactionRepository, cfg.Stellar().HorizonURL())
+	// Balance is moved only after a deposit/withdrawal is confirmed on-chain
+	// (issue #496); the vault repository applies it idempotently by tx hash.
+	transactionService.SetBalanceApplier(vaultRepository)
 	transactionHandler := handler.NewTransactionHandler(transactionService)
 
 	settlementRepository := postgres.NewSettlementRepository(db)
@@ -190,6 +194,25 @@ func run() error {
 			baseLogger.Error("performance tracker stopped", "error", err.Error())
 		}
 	}()
+
+	// Background reconciliation of pending transactions: polls Horizon so a
+	// transaction's status is confirmed even when the client never calls
+	// GET /api/v1/transactions/{hash}. Broadcasts a WebSocket event on change.
+	txPoller := service.NewTransactionPoller(
+		service.TransactionPollerConfig{
+			Enabled:  cfg.TransactionPoller().Enabled(),
+			Interval: cfg.TransactionPoller().Interval(),
+			MinAge:   cfg.TransactionPoller().MinAge(),
+		},
+		transactionService,
+		func(_ context.Context, tx transaction.Transaction) {
+			wsHub.BroadcastEvent(transactionStatusEvent(tx))
+		},
+		baseLogger.WithGroup("tx-poller"),
+	)
+	pollerCtx, cancelPoller := context.WithCancel(context.Background())
+	defer cancelPoller()
+	go txPoller.Run(pollerCtx)
 
 	var ready atomic.Bool
 	ready.Store(true)
@@ -334,6 +357,27 @@ func run() error {
 		"uptime", time.Since(startedAt).String(),
 	)
 	return nil
+}
+
+// transactionStatusEvent maps a reconciled transaction to the WebSocket event
+// the dApp listens for on the "vaults:global" channel. Confirmed deposits and
+// withdrawals get their dedicated event type; everything else (failures, other
+// types) uses the generic status_changed event.
+func transactionStatusEvent(tx transaction.Transaction) ws.Event {
+	eventType := ws.EventStatusChanged
+	if tx.Status == transaction.StatusCompleted {
+		switch tx.Type {
+		case transaction.TypeDeposit:
+			eventType = ws.EventDepositConfirmed
+		case transaction.TypeWithdrawal:
+			eventType = ws.EventWithdrawalConfirmed
+		}
+	}
+	return ws.Event{
+		Channel: "vaults:global",
+		Type:    eventType,
+		Data:    tx,
+	}
 }
 
 func walletKeyFromContext(r *http.Request) string {

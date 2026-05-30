@@ -46,6 +46,7 @@ func (h *VaultHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/vaults/{id}", h.getVault)
 	mux.HandleFunc("GET /api/v1/vaults/{id}/allocations", h.getAllocations)
 	mux.HandleFunc("POST /api/v1/vaults/{id}/harvest", h.harvestVault)
+	mux.HandleFunc("GET /api/v1/vaults/{id}/my-position", h.getMyPosition)
 	mux.HandleFunc("GET /api/v1/vaults", h.listUserVaults)
 	mux.HandleFunc("GET /api/v1/vaults/all", h.listVaults)
 }
@@ -264,6 +265,34 @@ func (h *VaultHandler) getAllocations(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.OK(v.Allocations))
+}
+
+func (h *VaultHandler) getMyPosition(w http.ResponseWriter, r *http.Request) {
+	vaultID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("vault id must be a valid UUID"))
+		return
+	}
+
+	user, ok := auth.GetUserFromContext(r.Context())
+	if !ok {
+		response.WriteJSON(w, http.StatusUnauthorized, response.Err(http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized"))
+		return
+	}
+
+	userID, err := uuid.Parse(user.ID)
+	if err != nil {
+		response.WriteJSON(w, http.StatusUnauthorized, response.Err(http.StatusUnauthorized, "UNAUTHORIZED", "invalid token subject"))
+		return
+	}
+
+	position, err := h.service.GetMyPosition(r.Context(), userID, vaultID)
+	if err != nil {
+		h.writeDomainError(w, r, err)
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, response.OK(position))
 }
 
 func (h *VaultHandler) writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
