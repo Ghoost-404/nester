@@ -30,6 +30,9 @@ var (
 	ErrVaultNotActive       = errors.New("vault is not active")
 	ErrInsufficientBalance  = errors.New("vault balance must be zero before closing")
 	ErrVaultForbidden       = errors.New("vault does not belong to caller")
+	ErrAllocationNotFound   = errors.New("allocation not found")
+	ErrAllocationHasBalance = errors.New("allocation has non-zero balance; set force=true to remove")
+	ErrDuplicateProtocol    = errors.New("protocol already allocated")
 )
 
 const (

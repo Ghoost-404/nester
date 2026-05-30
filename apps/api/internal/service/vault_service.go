@@ -17,7 +17,7 @@ import (
 // no operator secret is configured.
 type VaultDepositInvoker interface {
 	DepositToVault(ctx context.Context, contractAddress string, amountStroops int64) error
-	WithdrawFromVault(ctx context.Context, contractAddress string, sharesStroops int64) error
+	WithdrawFromVault(ctx context.Context, contractAddress string, sharesStroops int64, slippageBps int) error
 	HarvestVault(ctx context.Context, contractAddress, userAddress string, compound bool) (string, error)
 }
 
@@ -26,7 +26,7 @@ type VaultDepositInvoker interface {
 type NoopVaultDepositInvoker struct{}
 
 func (NoopVaultDepositInvoker) DepositToVault(_ context.Context, _ string, _ int64) error { return nil }
-func (NoopVaultDepositInvoker) WithdrawFromVault(_ context.Context, _ string, _ int64) error {
+func (NoopVaultDepositInvoker) WithdrawFromVault(_ context.Context, _ string, _ int64, _ int) error {
 	return nil
 }
 func (NoopVaultDepositInvoker) HarvestVault(_ context.Context, _, _ string, _ bool) (string, error) {
@@ -38,12 +38,12 @@ const defaultHarvestPerformanceFeeBPS = 1000
 
 // HarvestResult is returned by POST /api/v1/vaults/{id}/harvest.
 type HarvestResult struct {
-	GrossYieldUSDC      string `json:"gross_yield_usdc"`
-	PerformanceFeeUSDC  string `json:"performance_fee_usdc"`
-	NetYieldUSDC        string `json:"net_yield_usdc"`
-	Compounded          bool   `json:"compounded"`
-	NewSharesMinted     string `json:"new_shares_minted,omitempty"`
-	TxHash              string `json:"tx_hash,omitempty"`
+	GrossYieldUSDC     string `json:"gross_yield_usdc"`
+	PerformanceFeeUSDC string `json:"performance_fee_usdc"`
+	NetYieldUSDC       string `json:"net_yield_usdc"`
+	Compounded         bool   `json:"compounded"`
+	NewSharesMinted    string `json:"new_shares_minted,omitempty"`
+	TxHash             string `json:"tx_hash,omitempty"`
 }
 
 type VaultService struct {
@@ -86,11 +86,12 @@ type CloseVaultInput struct {
 }
 
 type RecordWithdrawalInput struct {
-	VaultID uuid.UUID
-	UserID  uuid.UUID
-	Amount  decimal.Decimal
-	TxHash  string
-	Fee     decimal.Decimal
+	VaultID     uuid.UUID
+	UserID      uuid.UUID
+	Amount      decimal.Decimal
+	TxHash      string
+	Fee         decimal.Decimal
+	SlippageBps int // optional; 0 uses configured default
 }
 
 // ── Constructor ──────────────────────────────────────────────────────────────
@@ -417,7 +418,7 @@ func (s *VaultService) RecordWithdrawal(ctx context.Context, input RecordWithdra
 
 	if s.depositInvoker != nil {
 		stroops := input.Amount.Mul(decimal.NewFromInt(10_000_000)).Round(0).IntPart()
-		if err := s.depositInvoker.WithdrawFromVault(ctx, existing.ContractAddress, stroops); err != nil {
+		if err := s.depositInvoker.WithdrawFromVault(ctx, existing.ContractAddress, stroops, input.SlippageBps); err != nil {
 			return vault.Vault{}, fmt.Errorf("on-chain withdrawal failed: %w", err)
 		}
 	}

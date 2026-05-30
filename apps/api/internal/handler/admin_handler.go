@@ -2,13 +2,16 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	admindomain "github.com/suncrestlabs/nester/apps/api/internal/domain/admin"
 	"github.com/suncrestlabs/nester/apps/api/internal/domain/vault"
@@ -29,6 +32,10 @@ type adminService interface {
 	GetVaultDetail(ctx context.Context, id uuid.UUID) (admindomain.VaultDetail, error)
 	PauseVault(ctx context.Context, id uuid.UUID) (admindomain.VaultDetail, error)
 	UnpauseVault(ctx context.Context, id uuid.UUID) (admindomain.VaultDetail, error)
+	CreateAllocation(ctx context.Context, input service.CreateAllocationInput) (vault.Allocation, error)
+	UpdateAllocation(ctx context.Context, input service.UpdateAllocationInput) (vault.Allocation, error)
+	DeleteAllocation(ctx context.Context, input service.DeleteAllocationInput) error
+	TriggerRebalance(ctx context.Context, id uuid.UUID, req admindomain.RebalanceRequest) (admindomain.RebalanceResponse, error)
 	ListSettlements(ctx context.Context, filter admindomain.SettlementListFilter) ([]admindomain.SettlementSummary, int, error)
 	ListUsers(ctx context.Context, filter admindomain.UserListFilter) ([]admindomain.UserSummary, int, error)
 	GetDetailedHealth(ctx context.Context) (admindomain.DetailedHealth, error)
@@ -66,6 +73,10 @@ func (h *AdminHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/admin/vaults/{id}", h.getVaultDetail)
 	mux.HandleFunc("POST /api/v1/admin/vaults/{id}/pause", h.pauseVault)
 	mux.HandleFunc("POST /api/v1/admin/vaults/{id}/unpause", h.unpauseVault)
+	mux.HandleFunc("POST /api/v1/admin/vaults/{id}/rebalance", h.rebalanceVault)
+	mux.HandleFunc("POST /api/v1/admin/vaults/{id}/allocations", h.createAllocation)
+	mux.HandleFunc("PATCH /api/v1/admin/vaults/{id}/allocations/{alloc_id}", h.updateAllocation)
+	mux.HandleFunc("DELETE /api/v1/admin/vaults/{id}/allocations/{alloc_id}", h.deleteAllocation)
 	mux.HandleFunc("GET /api/v1/admin/settlements", h.listSettlements)
 	mux.HandleFunc("GET /api/v1/admin/users", h.listUsers)
 	mux.HandleFunc("GET /api/v1/admin/health", h.getDetailedHealth)
@@ -171,6 +182,135 @@ func (h *AdminHandler) unpauseVault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, response.OK(result))
+}
+
+func (h *AdminHandler) rebalanceVault(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("vault id must be a valid UUID"))
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("invalid request body"))
+		return
+	}
+
+	var req admindomain.RebalanceRequest
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("request body must be valid JSON"))
+			return
+		}
+	}
+
+	result, err := h.service.TriggerRebalance(r.Context(), id, req)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, response.OK(result))
+}
+
+type createAllocationRequest struct {
+	Protocol string          `json:"protocol"`
+	Weight   decimal.Decimal `json:"weight"`
+	APY      decimal.Decimal `json:"apy"`
+}
+
+func (h *AdminHandler) createAllocation(w http.ResponseWriter, r *http.Request) {
+	vaultID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("vault id must be a valid UUID"))
+		return
+	}
+
+	var req createAllocationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr(err.Error()))
+		return
+	}
+
+	result, err := h.service.CreateAllocation(r.Context(), service.CreateAllocationInput{
+		VaultID:  vaultID,
+		Protocol: req.Protocol,
+		Weight:   req.Weight,
+		APY:      req.APY,
+	})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	response.WriteJSON(w, http.StatusCreated, response.Created(result))
+}
+
+type updateAllocationRequest struct {
+	Protocol *string          `json:"protocol,omitempty"`
+	Weight   *decimal.Decimal `json:"weight,omitempty"`
+	APY      *decimal.Decimal `json:"apy,omitempty"`
+}
+
+func (h *AdminHandler) updateAllocation(w http.ResponseWriter, r *http.Request) {
+	vaultID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("vault id must be a valid UUID"))
+		return
+	}
+
+	allocationID, err := uuid.Parse(r.PathValue("alloc_id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("allocation id must be a valid UUID"))
+		return
+	}
+
+	var req updateAllocationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr(err.Error()))
+		return
+	}
+	if req.Protocol == nil && req.Weight == nil && req.APY == nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("at least one of protocol, weight, or apy must be provided"))
+		return
+	}
+
+	result, err := h.service.UpdateAllocation(r.Context(), service.UpdateAllocationInput{
+		VaultID:      vaultID,
+		AllocationID: allocationID,
+		Protocol:     req.Protocol,
+		Weight:       req.Weight,
+		APY:          req.APY,
+	})
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, response.OK(result))
+}
+
+func (h *AdminHandler) deleteAllocation(w http.ResponseWriter, r *http.Request) {
+	vaultID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("vault id must be a valid UUID"))
+		return
+	}
+
+	allocationID, err := uuid.Parse(r.PathValue("alloc_id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("allocation id must be a valid UUID"))
+		return
+	}
+
+	force := strings.EqualFold(r.URL.Query().Get("force"), "true")
+	if err := h.service.DeleteAllocation(r.Context(), service.DeleteAllocationInput{
+		VaultID:      vaultID,
+		AllocationID: allocationID,
+		Force:        force,
+	}); err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, response.OK(map[string]string{"status": "deleted"}))
 }
 
 func (h *AdminHandler) listSettlements(w http.ResponseWriter, r *http.Request) {
@@ -297,8 +437,20 @@ func (h *AdminHandler) writeError(w http.ResponseWriter, r *http.Request, err er
 	switch {
 	case errors.Is(err, service.ErrInvalidAdminInput):
 		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr(err.Error()))
+	case errors.Is(err, service.ErrRebalanceInFlight):
+		response.WriteJSON(w, http.StatusConflict, response.Err(http.StatusConflict, "REBALANCE_IN_FLIGHT", err.Error()))
+	case errors.Is(err, service.ErrRebalanceNotEligible):
+		response.WriteJSON(w, http.StatusBadRequest, response.Err(http.StatusBadRequest, "REBALANCE_NOT_ELIGIBLE", err.Error()))
+	case errors.Is(err, service.ErrChainNotConfigured):
+		response.WriteJSON(w, http.StatusServiceUnavailable, response.Err(http.StatusServiceUnavailable, "CHAIN_NOT_CONFIGURED", err.Error()))
 	case errors.Is(err, vault.ErrVaultNotFound):
 		response.WriteJSON(w, http.StatusNotFound, response.NotFound("vault"))
+	case errors.Is(err, vault.ErrAllocationNotFound):
+		response.WriteJSON(w, http.StatusNotFound, response.NotFound("allocation"))
+	case errors.Is(err, vault.ErrInvalidAllocation), errors.Is(err, vault.ErrInvalidPrecision), errors.Is(err, vault.ErrDuplicateProtocol):
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr(err.Error()))
+	case errors.Is(err, vault.ErrAllocationHasBalance):
+		response.WriteJSON(w, http.StatusConflict, response.Err(http.StatusConflict, "ALLOCATION_HAS_BALANCE", err.Error()))
 	default:
 		logpkg.FromContext(r.Context()).Error("admin handler failed", "error", err.Error())
 		response.WriteJSON(w, http.StatusInternalServerError, response.Err(http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error"))

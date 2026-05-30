@@ -12,6 +12,7 @@ from app.services.prometheus import (
     get_market_sentiment,
     get_portfolio_insights,
     get_vault_recommendations,
+    get_yield_recommendation,
 )
 
 router = APIRouter(dependencies=[Depends(verify_jwt)])
@@ -63,6 +64,16 @@ async def portfolio_insights(
 async def market_sentiment(request: Request) -> dict[str, Any]:
     """Return current market sentiment for the Stellar DeFi / stablecoin space."""
     return await get_market_sentiment()
+
+
+@router.get("/recommend/vault")
+@_limiter.limit("20/minute")
+async def yield_recommendation(
+    request: Request,
+    claims: dict[str, Any] = Depends(verify_jwt),  # noqa: ARG001
+) -> dict[str, Any]:
+    """Return an AI-picked yield opportunity based on live DeFiLlama and CoinGecko data."""
+    return await get_yield_recommendation()
 
 
 @router.get("/vaults/{vault_id}/recommendations")

@@ -13,6 +13,8 @@ import aiohttp
 from app.config import settings
 from app.services.conversation_store import store as conversation_store
 from app.services.vault_context import VaultContextFetcher
+from app.services.defillama import get_client as get_defillama_client
+from app.services.coingecko import get_client as get_coingecko_client
 
 logger = logging.getLogger(__name__)
 
@@ -245,12 +247,16 @@ async def stream_chat(user_id: str, message: str) -> AsyncIterator[str]:
     context_block = vault_context_fetcher.build_context_block(vaults, market_rates)
     risk_profile_block = vault_context_fetcher.build_risk_profile_block(vaults, risk_data)
 
+    market_context_block = await _build_market_context_block()
+
     dynamic_system_prompt = f"""You are Prometheus, an AI financial advisor for the
 Nester DeFi platform.
 
 {context_block}
 
 {risk_profile_block}
+
+{market_context_block}
 
 ## Nester Platform Context
 - Vault types: Flexible (no lock), Fixed-30d (30-day lock, higher APY),
@@ -378,6 +384,130 @@ async def get_market_sentiment() -> dict[str, Any]:
             "summary": "Sentiment data temporarily unavailable.",
             "confidence": 0.0,
             "updatedAt": "",
+        }
+
+
+async def _build_market_context_block() -> str:
+    """Fetch live DeFiLlama + CoinGecko data and format as a system prompt block.
+
+    Returns an empty string on total failure so the prompt degrades gracefully.
+    """
+    sections: list[str] = []
+
+    try:
+        cg = get_coingecko_client()
+        prices = await cg.get_prices(["usd-coin", "stellar"])
+        sentiment = await cg.get_market_sentiment()
+
+        price_lines: list[str] = []
+        usdc = prices.get("usd-coin")
+        xlm = prices.get("stellar")
+        if usdc:
+            peg = "stable" if abs(usdc.usd - 1.0) < 0.005 else "off-peg"
+            price_lines.append(f"- USDC: ${usdc.usd:.4f} ({peg}, 24h {usdc.usd_24h_change:+.2f}%)")
+        if xlm:
+            price_lines.append(
+                f"- XLM: ${xlm.usd:.4f} (24h {xlm.usd_24h_change:+.2f}%, "
+                f"mktcap ${xlm.usd_market_cap:,.0f})"
+            )
+
+        if price_lines:
+            sections.append("## Live Price Data\n" + "\n".join(price_lines))
+
+        if sentiment.defi_market_cap_usd > 0:
+            sections.append(
+                f"## DeFi Market Sentiment\n"
+                f"- Signal: {sentiment.signal.upper()}\n"
+                f"- DeFi market cap: ${sentiment.defi_market_cap_usd:,.0f}\n"
+                f"- DeFi dominance: {sentiment.defi_dominance_pct:.2f}%"
+            )
+    except Exception as exc:
+        logger.warning("market context: coingecko fetch failed: %s", exc)
+
+    try:
+        dl = get_defillama_client()
+        pools = await dl.get_yield_pools(chain="Stellar")
+        if pools:
+            top5 = sorted(pools, key=lambda p: p.get("apy") or 0, reverse=True)[:5]
+            pool_lines = [
+                f"- {p['project']} {p['symbol']}: {p['apy']:.2f}% APY, "
+                f"TVL ${p['tvlUsd']:,.0f}"
+                for p in top5
+            ]
+            sections.append("## Top Stellar DeFi Pools (DeFiLlama)\n" + "\n".join(pool_lines))
+    except Exception as exc:
+        logger.warning("market context: defillama fetch failed: %s", exc)
+
+    return "\n\n".join(sections)
+
+
+async def get_yield_recommendation() -> dict[str, Any]:
+    """Return an AI-picked yield opportunity based on current DeFiLlama and CoinGecko data."""
+    dl = get_defillama_client()
+    cg = get_coingecko_client()
+
+    pools: list[dict[str, Any]] = []
+    prices: dict[str, Any] = {}
+    sentiment_signal = "neutral"
+
+    try:
+        pools = await dl.get_yield_pools(chain="Stellar")
+    except Exception as exc:
+        logger.warning("get_yield_recommendation: defillama failed: %s", exc)
+
+    try:
+        raw_prices = await cg.get_prices(["usd-coin", "stellar"])
+        prices = {k: {"usd": v.usd, "change_24h": v.usd_24h_change} for k, v in raw_prices.items()}
+        raw_sentiment = await cg.get_market_sentiment()
+        sentiment_signal = raw_sentiment.signal
+    except Exception as exc:
+        logger.warning("get_yield_recommendation: coingecko failed: %s", exc)
+
+    top_pools_summary = ""
+    if pools:
+        top5 = sorted(pools, key=lambda p: p.get("apy") or 0, reverse=True)[:5]
+        lines = [
+            f"  - {p['project']} {p['symbol']}: APY {p['apy']:.2f}%, TVL ${p['tvlUsd']:,.0f}"
+            for p in top5
+        ]
+        top_pools_summary = "Top Stellar pools:\n" + "\n".join(lines)
+
+    schema = (
+        '{"protocol": str, "symbol": str, "apy": float, "tvl_usd": float,'
+        ' "rationale": str (1-2 sentences), "risk_level": "low"|"medium"|"high",'
+        ' "confidence": float (0.0-1.0)}'
+    )
+    prompt = (
+        "Based on current Stellar DeFi market conditions, pick the single best yield opportunity "
+        "for a Nester user seeking risk-adjusted returns. "
+        f"Market sentiment: {sentiment_signal}. "
+        f"Prices: {json.dumps(prices)}. "
+        f"{top_pools_summary}\n"
+        f"Respond with JSON only, no markdown, matching this schema: {schema}"
+    )
+
+    client = get_client()
+    try:
+        response = await client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=ANALYZE_MAX_TOKENS,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = next(
+            (b.text for b in response.content if isinstance(b, anthropic.types.TextBlock)), ""
+        )
+        return dict(json.loads(_json_strip(text)))
+    except Exception:
+        logger.exception("Failed to get yield recommendation")
+        return {
+            "protocol": "",
+            "symbol": "",
+            "apy": 0.0,
+            "tvl_usd": 0.0,
+            "rationale": "Recommendation temporarily unavailable.",
+            "risk_level": "medium",
+            "confidence": 0.0,
         }
 
 

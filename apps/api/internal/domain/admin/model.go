@@ -164,4 +164,7 @@ type Repository interface {
 	ListUsers(ctx context.Context, filter UserListFilter) ([]UserSummary, int, error)
 	GetLastEventIndexedAt(ctx context.Context) (*time.Time, error)
 	DatabaseHealth(ctx context.Context) (int64, error)
+	CreateVaultRebalance(ctx context.Context, record VaultRebalanceRecord) (VaultRebalanceRecord, error)
+	UpdateVaultRebalance(ctx context.Context, record VaultRebalanceRecord) (VaultRebalanceRecord, error)
+	HasInFlightRebalance(ctx context.Context, vaultID uuid.UUID) (bool, error)
 }
