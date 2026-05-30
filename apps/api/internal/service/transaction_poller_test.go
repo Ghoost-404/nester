@@ -73,6 +73,10 @@ func (r *fakeTransactionRepo) ListPendingOlderThan(_ context.Context, cutoff tim
 	return out, nil
 }
 
+func (r *fakeTransactionRepo) ListUserTransactions(_ context.Context, _ transaction.ListFilter) ([]transaction.Transaction, int, error) {
+	return nil, 0, nil
+}
+
 // horizonStub returns a Horizon server that responds to GET /transactions/{hash}
 // based on the provided per-hash responses. A hash with no entry returns 404
 // (Horizon's "not yet ingested / still pending" signal).
