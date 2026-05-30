@@ -61,10 +61,6 @@ func (r *fakeTransactionRepo) UpdateStatus(_ context.Context, hash string, statu
 	return tx, nil
 }
 
-func (r *fakeTransactionRepo) ListUserTransactions(context.Context, transaction.ListFilter) ([]transaction.Transaction, int, error) {
-	return nil, 0, nil
-}
-
 func (r *fakeTransactionRepo) ListPendingOlderThan(_ context.Context, cutoff time.Time) ([]transaction.Transaction, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -75,6 +71,39 @@ func (r *fakeTransactionRepo) ListPendingOlderThan(_ context.Context, cutoff tim
 		}
 	}
 	return out, nil
+}
+
+func (r *fakeTransactionRepo) ListUserTransactions(_ context.Context, filter transaction.ListFilter) ([]transaction.Transaction, int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var matched []transaction.Transaction
+	for _, tx := range r.txs {
+		if filter.VaultID != uuid.Nil && tx.VaultID != filter.VaultID {
+			continue
+		}
+		if filter.Type != "" && string(tx.Type) != filter.Type {
+			continue
+		}
+		if filter.Status != "" && string(tx.Status) != filter.Status {
+			continue
+		}
+		matched = append(matched, tx)
+	}
+
+	total := len(matched)
+	if filter.Offset >= total {
+		return []transaction.Transaction{}, total, nil
+	}
+	end := total
+	if filter.Limit > 0 && filter.Offset+filter.Limit < end {
+		end = filter.Offset + filter.Limit
+	}
+	out := matched[filter.Offset:end]
+	if out == nil {
+		out = []transaction.Transaction{}
+	}
+	return out, total, nil
 }
 
 // horizonStub returns a Horizon server that responds to GET /transactions/{hash}

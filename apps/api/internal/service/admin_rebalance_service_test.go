@@ -84,6 +84,46 @@ func (c rebalanceChainInvoker) RebalanceVault(context.Context, string) (string, 
 func (c rebalanceChainInvoker) SimulateRebalanceVault(context.Context, string) error {
 	return c.simulateErr
 }
+func (c rebalanceChainInvoker) SetAllocationWeights(context.Context, string, []service.AllocationWeightEntry) error {
+	return nil
+}
+
+type rebalanceVaultRepo struct{}
+
+func (rebalanceVaultRepo) CreateVault(context.Context, vault.Vault) (vault.Vault, error) {
+	return vault.Vault{}, nil
+}
+func (rebalanceVaultRepo) GetVault(context.Context, uuid.UUID) (vault.Vault, error) {
+	return vault.Vault{}, nil
+}
+func (rebalanceVaultRepo) ListUserVaults(context.Context, uuid.UUID, vault.UserListFilter) ([]vault.Vault, int, error) {
+	return nil, 0, nil
+}
+func (rebalanceVaultRepo) ListVaults(context.Context, vault.ListFilter) ([]vault.Vault, int, error) {
+	return nil, 0, nil
+}
+func (rebalanceVaultRepo) RecordDeposit(context.Context, uuid.UUID, vault.TransactionRecord) error {
+	return nil
+}
+func (rebalanceVaultRepo) UpdateVaultBalances(context.Context, uuid.UUID, decimal.Decimal, decimal.Decimal) error {
+	return nil
+}
+func (rebalanceVaultRepo) ReplaceAllocations(context.Context, uuid.UUID, []vault.Allocation) error {
+	return nil
+}
+func (rebalanceVaultRepo) UpdateVault(context.Context, uuid.UUID, string, vault.VaultStatus) error {
+	return nil
+}
+func (rebalanceVaultRepo) RecordWithdrawal(context.Context, uuid.UUID, vault.TransactionRecord) error {
+	return nil
+}
+func (rebalanceVaultRepo) SoftDeleteVault(context.Context, uuid.UUID) error { return nil }
+func (rebalanceVaultRepo) ListDeposits(context.Context, uuid.UUID) ([]vault.VaultTransaction, error) {
+	return nil, nil
+}
+func (rebalanceVaultRepo) ListUserVaultTransactions(context.Context, uuid.UUID, uuid.UUID) ([]vault.VaultTransaction, error) {
+	return nil, nil
+}
 
 func TestAdminService_TriggerRebalance_DryRun(t *testing.T) {
 	vaultID := uuid.New()
@@ -100,7 +140,7 @@ func TestAdminService_TriggerRebalance_DryRun(t *testing.T) {
 			},
 		},
 	}
-	svc := service.NewAdminService(repo, rebalanceChainInvoker{}, "", "")
+	svc := service.NewAdminService(repo, rebalanceVaultRepo{}, rebalanceChainInvoker{}, "", "", "", 5)
 
 	resp, err := svc.TriggerRebalance(context.Background(), vaultID, admindomain.RebalanceRequest{
 		Strategy: "auto",
@@ -129,7 +169,7 @@ func TestAdminService_TriggerRebalance_Submit(t *testing.T) {
 			},
 		},
 	}
-	svc := service.NewAdminService(repo, rebalanceChainInvoker{submitHash: "abc123"}, "", "")
+	svc := service.NewAdminService(repo, rebalanceVaultRepo{}, rebalanceChainInvoker{submitHash: "abc123"}, "", "", "", 5)
 
 	resp, err := svc.TriggerRebalance(context.Background(), vaultID, admindomain.RebalanceRequest{
 		Strategy: "auto",
@@ -157,7 +197,7 @@ func TestAdminService_TriggerRebalance_InFlight(t *testing.T) {
 			},
 		},
 	}
-	svc := service.NewAdminService(repo, rebalanceChainInvoker{}, "", "")
+	svc := service.NewAdminService(repo, rebalanceVaultRepo{}, rebalanceChainInvoker{}, "", "", "", 5)
 
 	_, err := svc.TriggerRebalance(context.Background(), vaultID, admindomain.RebalanceRequest{DryRun: true})
 	if !errors.Is(err, service.ErrRebalanceInFlight) {
