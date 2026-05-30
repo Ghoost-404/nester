@@ -122,6 +122,7 @@ func run() error {
 			cfg.Stellar().HorizonURL(),
 			cfg.Stellar().NetworkPassphrase(),
 			secret,
+			cfg.Stellar().WithdrawalSlippageBps(),
 		)
 		if err != nil {
 			return fmt.Errorf("init chain invoker: %w", err)

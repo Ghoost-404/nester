@@ -68,11 +68,12 @@ type DatabaseConfig struct {
 }
 
 type StellarConfig struct {
-	networkPassphrase string
-	rpcURL            string
-	horizonURL        string
-	operatorSecret    string
-	stellarUSDCIssuer string
+	networkPassphrase     string
+	rpcURL                string
+	horizonURL            string
+	operatorSecret        string
+	stellarUSDCIssuer     string
+	withdrawalSlippageBps int
 }
 
 type AuthConfig struct {
@@ -138,11 +139,12 @@ func Load() (*Config, error) {
 			connectionTimeout: loader.durationDefault("DATABASE_CONNECTION_TIMEOUT", 5*time.Second),
 		},
 		stellar: StellarConfig{
-			networkPassphrase: loader.requiredString("STELLAR_NETWORK_PASSPHRASE"),
-			rpcURL:            loader.requiredURL("STELLAR_RPC_URL"),
-			horizonURL:        loader.requiredURL("STELLAR_HORIZON_URL"),
-			operatorSecret:    loader.stringDefault("STELLAR_OPERATOR_SECRET", ""),
-			stellarUSDCIssuer: loader.stringDefault("STELLAR_USDC_ISSUER", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
+			networkPassphrase:     loader.requiredString("STELLAR_NETWORK_PASSPHRASE"),
+			rpcURL:                loader.requiredURL("STELLAR_RPC_URL"),
+			horizonURL:            loader.requiredURL("STELLAR_HORIZON_URL"),
+			operatorSecret:        loader.stringDefault("STELLAR_OPERATOR_SECRET", ""),
+			stellarUSDCIssuer:     loader.stringDefault("STELLAR_USDC_ISSUER", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
+			withdrawalSlippageBps: loader.intDefault("WITHDRAWAL_SLIPPAGE_BPS", 50),
 		},
 		redis: RedisConfig{
 			addr: loader.stringDefault("REDIS_ADDR", ""),
@@ -405,6 +407,10 @@ func (c *Config) validate(loader *envLoader) {
 		loader.addError("TX_POLLER_MIN_AGE must not be negative")
 	}
 
+	if c.stellar.withdrawalSlippageBps <= 0 || c.stellar.withdrawalSlippageBps > 300 {
+		loader.addError("WITHDRAWAL_SLIPPAGE_BPS must be between 1 and 300")
+	}
+
 	// Require at least one payment provider key in production/staging so
 	// offramp features (bank list, account resolution) work at deploy time
 	// rather than failing silently when a user first triggers them.
@@ -497,6 +503,10 @@ func (s StellarConfig) HorizonURL() string {
 
 func (s StellarConfig) OperatorSecret() string {
 	return s.operatorSecret
+}
+
+func (s StellarConfig) WithdrawalSlippageBps() int {
+	return s.withdrawalSlippageBps
 }
 
 func (l LogConfig) Level() string {

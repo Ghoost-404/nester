@@ -17,7 +17,7 @@ import (
 // no operator secret is configured.
 type VaultDepositInvoker interface {
 	DepositToVault(ctx context.Context, contractAddress string, amountStroops int64) error
-	WithdrawFromVault(ctx context.Context, contractAddress string, sharesStroops int64) error
+	WithdrawFromVault(ctx context.Context, contractAddress string, sharesStroops int64, slippageBps int) error
 }
 
 // NoopVaultDepositInvoker satisfies VaultDepositInvoker without making any
@@ -25,7 +25,9 @@ type VaultDepositInvoker interface {
 type NoopVaultDepositInvoker struct{}
 
 func (NoopVaultDepositInvoker) DepositToVault(_ context.Context, _ string, _ int64) error    { return nil }
-func (NoopVaultDepositInvoker) WithdrawFromVault(_ context.Context, _ string, _ int64) error { return nil }
+func (NoopVaultDepositInvoker) WithdrawFromVault(_ context.Context, _ string, _ int64, _ int) error {
+	return nil
+}
 
 type VaultService struct {
 	repository     vault.Repository
@@ -66,11 +68,12 @@ type CloseVaultInput struct {
 }
 
 type RecordWithdrawalInput struct {
-	VaultID uuid.UUID
-	UserID  uuid.UUID
-	Amount  decimal.Decimal
-	TxHash  string
-	Fee     decimal.Decimal
+	VaultID     uuid.UUID
+	UserID      uuid.UUID
+	Amount      decimal.Decimal
+	TxHash      string
+	Fee         decimal.Decimal
+	SlippageBps int // optional; 0 uses configured default
 }
 
 // ── Constructor ──────────────────────────────────────────────────────────────
@@ -392,7 +395,7 @@ func (s *VaultService) RecordWithdrawal(ctx context.Context, input RecordWithdra
 
 	if s.depositInvoker != nil {
 		stroops := input.Amount.Mul(decimal.NewFromInt(10_000_000)).Round(0).IntPart()
-		if err := s.depositInvoker.WithdrawFromVault(ctx, existing.ContractAddress, stroops); err != nil {
+		if err := s.depositInvoker.WithdrawFromVault(ctx, existing.ContractAddress, stroops, input.SlippageBps); err != nil {
 			return vault.Vault{}, fmt.Errorf("on-chain withdrawal failed: %w", err)
 		}
 	}

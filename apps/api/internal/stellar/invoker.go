@@ -173,6 +173,9 @@ type simulateResult struct {
 	TransactionData string `json:"transactionData"`
 	MinResourceFee  string `json:"minResourceFee"`
 	Error           string `json:"error,omitempty"`
+	Results         []struct {
+		XDR string `json:"xdr"`
+	} `json:"results,omitempty"`
 }
 
 type sendParams struct {
@@ -301,6 +304,122 @@ func (c *ContractInvoker) getSequenceNumber(ctx context.Context) (int64, error) 
 		return 0, fmt.Errorf("parse sequence %q: %w", body.Sequence, err)
 	}
 	return seq, nil
+}
+
+// PreviewWithdrawNet simulates withdrawal_fee_preview and returns the net
+// assets the user would receive after fees (slippage-safe preview base).
+func (c *ContractInvoker) PreviewWithdrawNet(ctx context.Context, contractAddress string, sharesStroops int64) (int64, error) {
+	callerScAddr, err := accountAddressToXDR(c.kp.Address())
+	if err != nil {
+		return 0, err
+	}
+
+	result, err := c.simulateContractFn(ctx, contractAddress, "withdrawal_fee_preview", []xdr.ScVal{
+		{Type: xdr.ScValTypeScvAddress, Address: &callerScAddr},
+		int64ToI128ScVal(sharesStroops),
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return scValMapFieldI128(result, "net_amount_received")
+}
+
+func (c *ContractInvoker) simulateContractFn(
+	ctx context.Context,
+	contractAddress, functionName string,
+	args []xdr.ScVal,
+) (xdr.ScVal, error) {
+	contractScAddr, err := contractAddressToXDR(contractAddress)
+	if err != nil {
+		return xdr.ScVal{}, err
+	}
+
+	hostFn := xdr.HostFunction{
+		Type: xdr.HostFunctionTypeHostFunctionTypeInvokeContract,
+		InvokeContract: &xdr.InvokeContractArgs{
+			ContractAddress: contractScAddr,
+			FunctionName:    xdr.ScSymbol(functionName),
+			Args:            args,
+		},
+	}
+
+	seq, err := c.getSequenceNumber(ctx)
+	if err != nil {
+		return xdr.ScVal{}, fmt.Errorf("get sequence number: %w", err)
+	}
+
+	sourceAccount := txnbuild.NewSimpleAccount(c.kp.Address(), seq)
+	tx, err := txnbuild.NewTransaction(txnbuild.TransactionParams{
+		SourceAccount:        &sourceAccount,
+		IncrementSequenceNum: true,
+		Operations: []txnbuild.Operation{
+			&txnbuild.InvokeHostFunction{HostFunction: hostFn},
+		},
+		BaseFee:       txnbuild.MinBaseFee,
+		Preconditions: txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(int64((5 * time.Minute).Seconds()))},
+	})
+	if err != nil {
+		return xdr.ScVal{}, fmt.Errorf("build transaction: %w", err)
+	}
+
+	txB64, err := tx.Base64()
+	if err != nil {
+		return xdr.ScVal{}, fmt.Errorf("encode transaction: %w", err)
+	}
+
+	simResult, err := c.simulate(ctx, txB64)
+	if err != nil {
+		return xdr.ScVal{}, err
+	}
+	if len(simResult.Results) == 0 || simResult.Results[0].XDR == "" {
+		return xdr.ScVal{}, fmt.Errorf("%w: missing return value", ErrSimulateFailed)
+	}
+
+	var returnVal xdr.ScVal
+	if err := xdr.SafeUnmarshalBase64(simResult.Results[0].XDR, &returnVal); err != nil {
+		return xdr.ScVal{}, fmt.Errorf("decode return value: %w", err)
+	}
+	return returnVal, nil
+}
+
+func scValMapFieldI128(val xdr.ScVal, fieldName string) (int64, error) {
+	if val.Type != xdr.ScValTypeScvMap || val.Map == nil || *val.Map == nil {
+		return 0, fmt.Errorf("expected struct map return value")
+	}
+
+	for _, entry := range **val.Map {
+		sym, ok := scValAsSymbol(entry.Key)
+		if !ok || sym != fieldName {
+			continue
+		}
+		return i128ScValToInt64(entry.Val)
+	}
+
+	return 0, fmt.Errorf("field %q not found in preview result", fieldName)
+}
+
+func scValAsSymbol(val xdr.ScVal) (string, bool) {
+	if val.Type != xdr.ScValTypeScvSymbol || val.Sym == nil {
+		return "", false
+	}
+	return string(*val.Sym), true
+}
+
+func i128ScValToInt64(val xdr.ScVal) (int64, error) {
+	if val.Type != xdr.ScValTypeScvI128 || val.I128 == nil {
+		return 0, fmt.Errorf("expected i128 value")
+	}
+	if val.I128.Hi != 0 {
+		if val.I128.Hi != -1 {
+			return 0, fmt.Errorf("i128 value exceeds int64 range")
+		}
+		return 0, fmt.Errorf("negative asset amount")
+	}
+	if val.I128.Lo > xdr.Uint64(1<<63-1) {
+		return 0, fmt.Errorf("i128 value exceeds int64 range")
+	}
+	return int64(val.I128.Lo), nil
 }
 
 // InvokeWithI128Pair calls a contract function with signature

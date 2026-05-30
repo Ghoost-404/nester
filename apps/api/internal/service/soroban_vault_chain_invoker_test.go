@@ -22,13 +22,14 @@ func newTestInvoker(t *testing.T, rpcURL, horizonURL string) *service.SorobanVau
 		horizonURL,
 		"Test SDF Network ; September 2015",
 		kp.Seed(),
+		50,
 	)
 	require.NoError(t, err)
 	return inv
 }
 
 func TestNewSorobanVaultChainInvoker_BadSecret(t *testing.T) {
-	_, err := service.NewSorobanVaultChainInvoker("http://rpc", "http://horizon", "pass", "bad")
+	_, err := service.NewSorobanVaultChainInvoker("http://rpc", "http://horizon", "pass", "bad", 50)
 	assert.Error(t, err)
 }
 
