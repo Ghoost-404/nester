@@ -25,8 +25,9 @@ def _get_redis() -> Any:
     if _redis_client is not None:
         return _redis_client if _redis_available else None
     try:
-        from app.config import settings
         import redis as _redis
+
+        from app.config import settings
         _redis_client = _redis.from_url(settings.redis_url, decode_responses=True)
         _redis_client.ping()
         _redis_available = True

@@ -47,8 +47,10 @@ class FakeVaultContextFetcher:
 async def test_recommend_vaults_uses_live_data_and_claude(monkeypatch):
     payload = (
         '{"recommended_vaults": ['
-        '{"vault_id": "vault-1", "allocation_pct": 70, "rationale": "Low risk and solid APY."}, '
-        '{"vault_id": "vault-2", "allocation_pct": 30, "rationale": "Adds yield without overexposing the portfolio."}], '
+        '{"vault_id": "vault-1", "allocation_pct": 70, '
+        '"rationale": "Low risk and solid APY."}, '
+        '{"vault_id": "vault-2", "allocation_pct": 30, '
+        '"rationale": "Adds yield without overexposing the portfolio."}], '
         '"expected_yield_usdc": 112.0, "confidence": "high"}'
     )
     monkeypatch.setattr(prometheus, "get_client", lambda: FakeClient(payload))
@@ -91,3 +93,4 @@ async def test_analyze_recommendation_returns_confidence_fields(monkeypatch):
     assert result.action.startswith("Shift 10%")
     assert result.confidence_reason
     assert result.data_freshness
+

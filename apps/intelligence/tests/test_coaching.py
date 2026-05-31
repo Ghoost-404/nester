@@ -28,7 +28,8 @@ class FakeClient:
 async def test_generate_coaching_returns_structured_schedule(monkeypatch):
     payload = (
         '{"progress_assessment": "You are on track.", '
-        '"deposit_schedule": [{"date": "2026-06-15", "amount_usdc": 100, "note": "First deposit"}], '
+        '"deposit_schedule": ['
+        '{"date": "2026-06-15", "amount_usdc": 100, "note": "First deposit"}], '
         '"nudges": ["Great start!"], "confidence": "high"}'
     )
     monkeypatch.setattr(prometheus, "get_client", lambda: FakeClient(payload))

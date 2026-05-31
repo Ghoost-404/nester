@@ -7,8 +7,8 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any, Literal, cast
 
-import anthropic
 import aiohttp
+import anthropic
 
 from app.config import settings
 from app.models.recommendation import (
@@ -18,10 +18,10 @@ from app.models.recommendation import (
     VaultRecommendationRequest,
     VaultRecommendationResponse,
 )
-from app.services.conversation_store import store as conversation_store
-from app.services.vault_context import VaultContextFetcher
-from app.services.defillama import get_client as get_defillama_client
 from app.services.coingecko import get_client as get_coingecko_client
+from app.services.conversation_store import store as conversation_store
+from app.services.defillama import get_client as get_defillama_client
+from app.services.vault_context import VaultContextFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,11 @@ def _cache_set(user_id: str, context: dict[str, Any]) -> None:
     _mem_context_cache[user_id] = (context, time.monotonic() + _CONTEXT_CACHE_TTL)
 
 
-async def fetch_user_context(user_id: str, api_base_url: str, service_api_key: str) -> dict[str, Any]:
+async def fetch_user_context(
+    user_id: str,
+    api_base_url: str,
+    service_api_key: str,
+) -> dict[str, Any]:
     """Fetch user vaults, balances, allocations, and recent APY snapshots.
 
     Returns a dict with 'vaults', 'performance', and 'fetched_at'.
@@ -320,7 +324,8 @@ portfolio."""
             {
                 "role": "user",
                 "content": (
-                    "[PORTFOLIO CONTEXT — do not quote this back, use it to personalise your response]\n"
+                    "[PORTFOLIO CONTEXT — do not quote this back, "
+                    "use it to personalise your response]\n"
                     + json.dumps(user_context, indent=2)
                     + goals_block
                 ),
@@ -370,15 +375,17 @@ async def generate_coaching(request: Any) -> Any:
     goal = request.goal
     portfolio = request.portfolio
     schema = (
-        '{"progress_assessment": str, "deposit_schedule": [{"date": str, "amount_usdc": float, "note": str}], '
+        '{"progress_assessment": str, "deposit_schedule": '
+        '[{"date": str, "amount_usdc": float, "note": str}], '
         '"nudges": [str], "confidence": "high"|"medium"|"low"}'
     )
+    vaults_preview = json.dumps(portfolio.vaults[:5])
     prompt = (
         "You are Prometheus, a savings coach for Nester on Stellar. "
         f"Goal: target {goal.target_amount} {goal.currency}, deadline {goal.deadline}, "
         f"description: {goal.description or 'none'}. "
         f"Current progress: {goal.progress_pct:.1f}% ({goal.current_amount} saved). "
-        f"Portfolio total USD: {portfolio.total_balance_usd}. Vaults: {json.dumps(portfolio.vaults[:5])}. "
+        f"Portfolio total USD: {portfolio.total_balance_usd}. Vaults: {vaults_preview}. "
         "Return a realistic deposit schedule from today until the deadline, with 3-8 installments. "
         "Include a short progress assessment and 2-3 motivational nudges. "
         f"Respond with JSON only matching: {schema}"
@@ -681,7 +688,11 @@ def _confidence_from_sources(
     )
 
 
-def _estimate_expected_yield(deposit_usdc: float, time_horizon_months: int, weighted_apy: float) -> float:
+def _estimate_expected_yield(
+    deposit_usdc: float,
+    time_horizon_months: int,
+    weighted_apy: float,
+) -> float:
     projected = deposit_usdc * (weighted_apy / 100.0) * (time_horizon_months / 12.0)
     return round(max(projected, 0.0), 2)
 
@@ -718,19 +729,24 @@ def _rank_vaults(
             if not vault_id:
                 continue
             risk = risk_scores.get(vault_id, {})
+            apy_val = float(vault.get("apy", 0.0) or 0.0)
+            risk_val = float(risk.get("overall", 100.0))
             ranked.append({
                 "id": vault_id,
                 "name": str(vault.get("name", "Vault")),
-                "apy": float(vault.get("apy", 0.0) or 0.0),
-                "risk": float(risk.get("overall", 100.0)),
-                "score": float(vault.get("apy", 0.0) or 0.0) - (float(risk.get("overall", 100.0)) / 100.0) * 3.0,
+                "apy": apy_val,
+                "risk": risk_val,
+                "score": apy_val - (risk_val / 100.0) * 3.0,
             })
 
     ranked.sort(key=lambda item: (item["score"], item["apy"]), reverse=True)
     return ranked
 
 
-def _build_allocation_plan(ranked: list[dict[str, Any]], risk_tolerance: str) -> list[RecommendedVault]:
+def _build_allocation_plan(
+    ranked: list[dict[str, Any]],
+    risk_tolerance: str,
+) -> list[RecommendedVault]:
     if not ranked:
         return []
 
@@ -748,7 +764,8 @@ def _build_allocation_plan(ranked: list[dict[str, Any]], risk_tolerance: str) ->
     plan: list[RecommendedVault] = []
     for vault, pct in zip(selected, desired_split, strict=False):
         rationale = (
-            f"{vault['name']} combines {vault['apy']:.2f}% APY with a risk score of {vault['risk']:.0f}/100."
+            f"{vault['name']} combines {vault['apy']:.2f}% APY "
+            f"with a risk score of {vault['risk']:.0f}/100."
         )
         plan.append(
             RecommendedVault(
@@ -771,8 +788,9 @@ def _build_allocation_plan(ranked: list[dict[str, Any]], risk_tolerance: str) ->
 def _fallback_rationale(request: VaultRecommendationRequest, ranked: list[dict[str, Any]]) -> str:
     if not ranked:
         return (
-            f"No live vault data was available, so the recommendation follows the user's "
-            f"{request.risk_tolerance} risk tolerance and time horizon of {request.time_horizon_months} months."
+            "No live vault data was available, so the recommendation follows the user's "
+            f"{request.risk_tolerance} risk tolerance and a "
+            f"{request.time_horizon_months}-month horizon."
         )
     best = ranked[0]
     return (
@@ -794,7 +812,11 @@ def _fallback_vault_recommendation(
             source = by_id.get(item.vault_id)
             if source:
                 weighted_apy += source["apy"] * (item.allocation_pct / 100.0)
-    expected = _estimate_expected_yield(request.initial_deposit_usdc, request.time_horizon_months, weighted_apy)
+    expected = _estimate_expected_yield(
+        request.initial_deposit_usdc,
+        request.time_horizon_months,
+        weighted_apy,
+    )
     if not plan and ranked:
         plan = [
             RecommendedVault(
@@ -858,28 +880,39 @@ async def recommend_vaults(
         ),
     })
 
-    vault_context_lines = [
-        f"- {vault['name']}: APY {vault.get('apy', 0.0):.2f}%, risk {risk_scores.get(str(vault.get('id', '')), {}).get('overall', 100.0):.0f}/100"
-        for vault in live_vaults[:8]
-    ]
-    user_context_lines = [
-        f"- {vault.get('name', 'Vault')}: ${float(vault.get('balance_usd', 0.0) or 0.0):,.2f} balance, APY {float(vault.get('apy', 0.0) or 0.0):.2f}%"
-        for vault in user_vaults[:5]
-    ]
+    def _vault_context_line(vault: dict[str, Any]) -> str:
+        vid = str(vault.get("id", ""))
+        risk_overall = risk_scores.get(vid, {}).get("overall", 100.0)
+        return (
+            f"- {vault['name']}: APY {vault.get('apy', 0.0):.2f}%, "
+            f"risk {risk_overall:.0f}/100"
+        )
+
+    def _user_context_line(vault: dict[str, Any]) -> str:
+        bal = float(vault.get("balance_usd", 0.0) or 0.0)
+        apy = float(vault.get("apy", 0.0) or 0.0)
+        return f"- {vault.get('name', 'Vault')}: ${bal:,.2f} balance, APY {apy:.2f}%"
+
+    vault_context_lines = [_vault_context_line(v) for v in live_vaults[:8]]
+    user_context_lines = [_user_context_line(v) for v in user_vaults[:5]]
     schema = (
         '{"recommended_vaults": [{"vault_id": str, "allocation_pct": int, "rationale": str}], '
         '"expected_yield_usdc": float, "confidence": "high"|"medium"|"low"}'
     )
+    positions_json = json.dumps(user_vaults[:5])
+    snapshot = chr(10).join(user_context_lines) if user_context_lines else "none"
     prompt = (
-        "Recommend the best vault or vault split for a Nester user. Use only the live context below. "
+        "Recommend the best vault or vault split for a Nester user. "
+        "Use only the live context below. "
         f"Risk tolerance: {request.risk_tolerance}. "
         f"Time horizon: {request.time_horizon_months} months. "
         f"Initial deposit: ${request.initial_deposit_usdc:.2f} USDC. "
         f"Savings goal: {request.savings_goal or 'not specified'}. "
-        f"User positions: {json.dumps(user_vaults[:5])}. "
+        f"User positions: {positions_json}. "
         f"Live vaults:\n{chr(10).join(vault_context_lines)}. "
-        f"Existing position snapshot:\n{chr(10).join(user_context_lines) if user_context_lines else 'none'}. "
-        f"Confidence guidance: {confidence_reason}. Data freshness: {data_freshness}. "
+        f"Existing position snapshot:\n{snapshot}. "
+        f"Confidence guidance: {confidence_reason}. "
+        f"Data freshness: {data_freshness}. "
         f"Return JSON only, matching this schema: {schema}. "
         "Keep the rationale plain-language and avoid redundant wording."
     )
@@ -907,9 +940,14 @@ async def recommend_vaults(
         if not plan:
             return fallback
 
+        yield_key = "expected_yield_usdc"
+        parsed_yield = float(
+            parsed.get(yield_key, fallback.expected_yield_usdc)
+            or fallback.expected_yield_usdc,
+        )
         return VaultRecommendationResponse(
             recommended_vaults=plan,
-            expected_yield_usdc=float(parsed.get("expected_yield_usdc", fallback.expected_yield_usdc) or fallback.expected_yield_usdc),
+            expected_yield_usdc=parsed_yield,
             confidence=confidence,
         )
     except Exception:
@@ -946,7 +984,10 @@ async def analyze_recommendation(
         '"confidence_reason": str, "data_freshness": str, "disclaimer": str}'
     )
     context_lines = [
-        f"- {vault['name']}: APY {vault.get('apy', 0.0):.2f}%, risk {vault.get('risk_tier', 'unknown')}"
+        (
+            f"- {vault['name']}: APY {vault.get('apy', 0.0):.2f}%, "
+            f"risk {vault.get('risk_tier', 'unknown')}"
+        )
         for vault in live_vaults[:6]
     ]
     user_context = json.dumps(user_vaults[:5]) if user_vaults else "[]"
@@ -969,19 +1010,37 @@ async def analyze_recommendation(
             (b.text for b in response.content if isinstance(b, anthropic.types.TextBlock)), ""
         )
         parsed = json.loads(_json_strip(text))
+        default_disclaimer = "This is guidance, not financial advice."
+        conf_reason = (
+            str(parsed.get("confidence_reason", confidence_reason)).strip()
+            or confidence_reason
+        )
+        freshness = (
+            str(parsed.get("data_freshness", data_freshness)).strip()
+            or data_freshness
+        )
+        disclaimer = (
+            str(parsed.get("disclaimer", default_disclaimer)).strip()
+            or default_disclaimer
+        )
         return Recommendation(
             action=str(parsed.get("action", "Review your vault allocation")).strip(),
             rationale=str(parsed.get("rationale", "")).strip(),
             confidence=confidence,
-            confidence_reason=str(parsed.get("confidence_reason", confidence_reason)).strip() or confidence_reason,
-            data_freshness=str(parsed.get("data_freshness", data_freshness)).strip() or data_freshness,
-            disclaimer=str(parsed.get("disclaimer", "This is guidance, not financial advice.")).strip() or "This is guidance, not financial advice.",
+            confidence_reason=conf_reason,
+            data_freshness=freshness,
+            disclaimer=disclaimer,
         )
     except Exception:
         logger.exception("Failed to analyze recommendation prompt")
+        fallback_req = VaultRecommendationRequest(
+            risk_tolerance="moderate",
+            time_horizon_months=12,
+            initial_deposit_usdc=1.0,
+        )
         return Recommendation(
             action="Review your vault allocation",
-            rationale=_fallback_rationale(VaultRecommendationRequest(risk_tolerance="moderate", time_horizon_months=12, initial_deposit_usdc=1.0), ranked=[]),
+            rationale=_fallback_rationale(fallback_req, ranked=[]),
             confidence=confidence,
             confidence_reason=confidence_reason,
             data_freshness=data_freshness,

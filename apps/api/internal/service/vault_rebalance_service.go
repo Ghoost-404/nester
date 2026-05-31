@@ -32,11 +32,11 @@ type AllocationPct struct {
 }
 
 type VaultRebalanceService struct {
-	vaultRepo    vault.VaultRepository
+	vaultRepo    vault.Repository
 	adminService *AdminService
 }
 
-func NewVaultRebalanceService(vaultRepo vault.VaultRepository, adminService *AdminService) *VaultRebalanceService {
+func NewVaultRebalanceService(vaultRepo vault.Repository, adminService *AdminService) *VaultRebalanceService {
 	return &VaultRebalanceService{vaultRepo: vaultRepo, adminService: adminService}
 }
 

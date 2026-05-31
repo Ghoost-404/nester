@@ -157,6 +157,6 @@ export const intelligence = {
 
   sendMessage: (userId: string, message: string): EventSource => {
     const params = new URLSearchParams({ userId, message })
-    return new EventSource(`${BASE}/intelligence/chat?${params}`)
+    return new EventSource(`${INTELLIGENCE_BASE}/intelligence/chat?${params}`)
   },
 }

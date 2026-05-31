@@ -32,10 +32,10 @@ type UserVaultsResponse struct {
 }
 
 type UserVaultsService struct {
-	vaultRepo vault.VaultRepository
+	vaultRepo vault.Repository
 }
 
-func NewUserVaultsService(vaultRepo vault.VaultRepository) *UserVaultsService {
+func NewUserVaultsService(vaultRepo vault.Repository) *UserVaultsService {
 	return &UserVaultsService{vaultRepo: vaultRepo}
 }
 
