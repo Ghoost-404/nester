@@ -6,7 +6,7 @@ use soroban_sdk::{
 };
 mod vault_token {
     soroban_sdk::contractimport!(
-        file = "../../target/wasm32-unknown-unknown/release/vault_token.wasm"
+        file = "../../../target/wasm32-unknown-unknown/release/vault_token.wasm"
     );
 }
 use vault_token::Client as VaultTokenContractClient;

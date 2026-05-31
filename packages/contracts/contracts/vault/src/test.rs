@@ -5,7 +5,7 @@ extern crate std;
 use soroban_sdk::{
     contract, contractimpl,
     testutils::{Address as _, Ledger, LedgerInfo},
-    token, Address, Env, String,
+    token, Address, Env, String, Symbol, Vec,
 };
 use nester_access_control::Role;
 use vault_token::{VaultTokenContract, VaultTokenContractClient};
@@ -1054,6 +1054,20 @@ fn withdrawal_charges_no_perf_fee_on_impairment() {
     assert_eq!(balance, 800 * XLM, "impairment must not charge a performance fee");
 }
 
+#[contract]
+struct MockStrategy;
+#[contractimpl]
+impl MockStrategy {
+    pub fn calculate_rebalance_deltas(env: Env, _current: soroban_sdk::Vec<crate::CurrentAllocationView>, _total: i128) -> soroban_sdk::Vec<crate::AllocationDeltaView> {
+        let mut deltas = soroban_sdk::Vec::new(&env);
+        deltas.push_back(crate::AllocationDeltaView {
+            source_id: Symbol::new(&env, "aave"),
+            delta: -400 * 10_000_000, // Withdraw 400
+        });
+        deltas
+    }
+}
+
 #[test]
 fn rebalance_with_net_negative_delta_increases_liquid_reserves() {
     let (env, admin, token, vault, _treasury) = setup();
@@ -1072,56 +1086,16 @@ fn rebalance_with_net_negative_delta_increases_liquid_reserves() {
     
     // Deployed total = 1000. 
     // We need to mock calculate_rebalance_deltas to return a negative delta.
-    // calculate_rebalance_deltas(current_allocations, total) -> Vec<AllocationDeltaView>
-    // current_allocations = [{source_id: "aave", amount: 1000}]
-    // total = 1000
-    
-    // We use mock_all_auths so we can just mock the contract call
-    // However, Soroban testutils mock_all_auths doesn't easily mock return values of other contracts
-    // unless we register a mock contract.
-    
-    #[contract]
-    struct MockStrategy;
-    #[contractimpl]
-    impl MockStrategy {
-        pub fn calculate_rebalance_deltas(env: Env, _current: soroban_sdk::Vec<crate::CurrentAllocationView>, _total: i128) -> soroban_sdk::Vec<crate::AllocationDeltaView> {
-            let mut deltas = soroban_sdk::Vec::new(&env);
-            deltas.push_back(crate::AllocationDeltaView {
-                source_id: Symbol::new(&env, "aave"),
-                delta: -400 * 10_000_000, // Withdraw 400
-            });
-            deltas
-        }
-    }
     
     let real_strategy_id = env.register_contract(None, MockStrategy);
     vault.set_allocation_strategy(&admin, &real_strategy_id);
     
-    // Before rebalance, liquid reserves were 1000 (from deposit)
-    // Wait, record_source_allocation doesn't decrease liquid reserves, 
-    // in real flow settlement does. But for this test:
-    // Reserves = 1000 (deposit)
-    // Rebalance returns -400. 
-    // Expected new reserves = 1000 - (-400) = 1400.
-    
     vault.rebalance(&admin);
-    
-    // We can't directly query liquid reserves if there's no getter, 
-    // but we can check if they are used in collect_fees or emergency_withdraw.
-    // Or we could add a getter for tests. 
-    // Actually, vault has `pending_yield` which uses liquid reserves.
-    // pending_yield = contract_balance - liquid_reserves - accrued_fees
-    
-    // contract_balance = 1000 (deposit)
-    // liquid_reserves = 1400 (after rebalance)
-    // pending_yield = 1000 - 1400 = -400 (saturated to 0)
     
     // Let's check another way. emergency_withdraw uses liquid reserves.
     vault.pause(&admin);
-    let principal = vault.get_shares(&user); // 1000 shares
-    // We need to set principal in storage. deposit already did it.
-    // Principal = 1000.
-    
+    let _principal = vault.get_shares(&user); // 1000 shares
+
     // We have 1000 tokens in contract.
     // We processed rebalance which increased liquid reserves bookkeeping to 1400.
     // Now if we try to emergency_withdraw 1000, it should succeed because 1400 >= 1000.
