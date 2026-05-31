@@ -115,6 +115,8 @@ func run() error {
 	userRepository := postgres.NewUserRepository(db)
 	userService := service.NewUserService(userRepository)
 	userHandler := handler.NewUserHandler(userService)
+	userVaultsSvc := service.NewUserVaultsService(vaultRepository)
+	userHandler.SetUserVaultsService(userVaultsSvc)
 
 	adminRepository := postgres.NewAdminRepository(db)
 
@@ -286,6 +288,28 @@ func run() error {
 	// User vault rebalance (suggestions + execution)
 	vaultRebalanceSvc := service.NewVaultRebalanceService(vaultRepository, adminService)
 	vaultHandler.SetRebalanceService(vaultRebalanceSvc)
+
+	// Intelligence proxy (forwards to Python service)
+	intelURL := cfg.Intelligence().ServiceURL()
+	intelProxy := service.NewIntelligenceProxy(intelURL, cfg.Intelligence().Timeout())
+	prometheusClient := service.NewPrometheusClient(service.PrometheusConfig{
+		BaseURL: intelURL,
+		APIKey:  cfg.Auth().ServiceAPIKey(),
+		Timeout: cfg.Intelligence().Timeout(),
+	})
+	intelligenceHandler := handler.NewIntelligenceHandler(intelProxy, prometheusClient)
+	intelligenceHandler.Register(mux)
+
+	intelRelay := service.NewRelayHandler(http.DefaultClient, service.RelayConfig{
+		BaseURL: intelURL,
+		APIKey:  cfg.Auth().ServiceAPIKey(),
+		Timeout: cfg.Intelligence().Timeout(),
+	})
+	intelligenceRelayHandler := handler.NewIntelligenceRelayHandler(intelRelay)
+	intelligenceRelayHandler.Register(mux)
+
+	performanceSnapshotsHandler := handler.NewPerformanceSnapshotsHandler(performanceService)
+	performanceSnapshotsHandler.Register(mux)
 
 	bankHandler.Register(mux)
 

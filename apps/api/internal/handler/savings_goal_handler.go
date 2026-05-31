@@ -20,6 +20,7 @@ import (
 
 type SavingsGoalManager interface {
 	Create(ctx context.Context, userID uuid.UUID, in service.CreateSavingsGoalInput) (savingsgoal.SavingsGoal, error)
+	Get(ctx context.Context, userID, goalID uuid.UUID) (savingsgoal.SavingsGoal, error)
 	List(ctx context.Context, userID uuid.UUID) ([]savingsgoal.SavingsGoal, error)
 	Update(ctx context.Context, userID, goalID uuid.UUID, in service.UpdateSavingsGoalInput) (savingsgoal.SavingsGoal, error)
 	Delete(ctx context.Context, userID, goalID uuid.UUID) error
@@ -36,6 +37,7 @@ func NewSavingsGoalHandler(svc SavingsGoalManager) *SavingsGoalHandler {
 func (h *SavingsGoalHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/users/savings-goals", h.create)
 	mux.HandleFunc("GET /api/v1/users/savings-goals", h.list)
+	mux.HandleFunc("GET /api/v1/users/savings-goals/{id}", h.get)
 	mux.HandleFunc("PATCH /api/v1/users/savings-goals/{id}", h.update)
 	mux.HandleFunc("DELETE /api/v1/users/savings-goals/{id}", h.delete)
 }
@@ -90,6 +92,24 @@ func (h *SavingsGoalHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, http.StatusCreated, response.Created(goal))
+}
+
+func (h *SavingsGoalHandler) get(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.authenticatedUserID(w, r)
+	if !ok {
+		return
+	}
+	goalID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("goal id must be a valid UUID"))
+		return
+	}
+	goal, err := h.svc.Get(r.Context(), userID, goalID)
+	if err != nil {
+		h.writeError(w, r, err)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, response.OK(goal))
 }
 
 func (h *SavingsGoalHandler) list(w http.ResponseWriter, r *http.Request) {

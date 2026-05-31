@@ -29,6 +29,12 @@ type Config struct {
 	startup               StartupConfig
 	bank                  BankConfig
 	transactionPoller     TransactionPollerConfig
+	intelligence          IntelligenceConfig
+}
+
+type IntelligenceConfig struct {
+	serviceURL string
+	timeout    time.Duration
 }
 
 // TransactionPollerConfig governs the background loop that reconciles pending
@@ -194,6 +200,10 @@ func Load() (*Config, error) {
 			paystackKey:    loader.stringDefault("PAYSTACK_SECRET_KEY", ""),
 			flutterwaveKey: loader.stringDefault("FLUTTERWAVE_SECRET_KEY", ""),
 		},
+		intelligence: IntelligenceConfig{
+			serviceURL: loader.stringDefault("INTELLIGENCE_SERVICE_URL", "http://localhost:8000"),
+			timeout:    loader.durationDefault("INTELLIGENCE_SERVICE_TIMEOUT", 30*time.Second),
+		},
 		transactionPoller: TransactionPollerConfig{
 			enabled:  loader.boolDefault("TX_POLLER_ENABLED", true),
 			interval: loader.durationDefault("TX_POLLER_INTERVAL", 15*time.Second),
@@ -292,6 +302,18 @@ func (r RedisConfig) Addr() string {
 
 func (c Config) Bank() BankConfig {
 	return c.bank
+}
+
+func (c Config) Intelligence() IntelligenceConfig {
+	return c.intelligence
+}
+
+func (i IntelligenceConfig) ServiceURL() string {
+	return i.serviceURL
+}
+
+func (i IntelligenceConfig) Timeout() time.Duration {
+	return i.timeout
 }
 
 func (c Config) TransactionPoller() TransactionPollerConfig {

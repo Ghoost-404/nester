@@ -18,8 +18,9 @@ import (
 )
 
 type UserHandler struct {
-	service   *service.UserService
-	validator *validator.Validate
+	service        *service.UserService
+	userVaultsSvc  *service.UserVaultsService
+	validator      *validator.Validate
 }
 
 func NewUserHandler(service *service.UserService) *UserHandler {
@@ -27,6 +28,11 @@ func NewUserHandler(service *service.UserService) *UserHandler {
 		service:   service,
 		validator: validator.New(validator.WithRequiredStructEnabled()),
 	}
+}
+
+// SetUserVaultsService wires the intelligence-facing user vaults list.
+func (h *UserHandler) SetUserVaultsService(svc *service.UserVaultsService) {
+	h.userVaultsSvc = svc
 }
 
 type registerUserRequest struct {
@@ -40,6 +46,7 @@ func (h *UserHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/users/wallet/{address}", h.getUserByWallet)
 	mux.HandleFunc("GET /api/v1/users/profile", h.getProfile)
 	mux.HandleFunc("PATCH /api/v1/users/profile", h.updateProfile)
+	mux.HandleFunc("GET /api/v1/users/{id}/vaults", h.listUserVaultsForIntelligence)
 }
 
 func (h *UserHandler) registerUser(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +85,41 @@ func (h *UserHandler) getUserByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.OK(model))
+}
+
+func (h *UserHandler) listUserVaultsForIntelligence(w http.ResponseWriter, r *http.Request) {
+	if h.userVaultsSvc == nil {
+		response.WriteJSON(w, http.StatusServiceUnavailable, response.Err(http.StatusServiceUnavailable, "UNAVAILABLE", "user vaults service not configured"))
+		return
+	}
+	idStr := r.PathValue("id")
+	userID, err := uuid.Parse(idStr)
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("invalid user ID"))
+		return
+	}
+	if !h.authorizeUserAccess(w, r, userID) {
+		return
+	}
+	result, err := h.userVaultsSvc.ListForIntelligence(r.Context(), userID)
+	if err != nil {
+		h.writeDomainError(w, r, err)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, response.OK(result))
+}
+
+func (h *UserHandler) authorizeUserAccess(w http.ResponseWriter, r *http.Request, userID uuid.UUID) bool {
+	user, ok := auth.GetUserFromContext(r.Context())
+	if !ok {
+		response.WriteJSON(w, http.StatusUnauthorized, response.Err(http.StatusUnauthorized, "UNAUTHORIZED", "authentication required"))
+		return false
+	}
+	if user.ID != userID.String() {
+		response.WriteJSON(w, http.StatusForbidden, response.Err(http.StatusForbidden, "FORBIDDEN", "forbidden"))
+		return false
+	}
+	return true
 }
 
 func (h *UserHandler) getProfile(w http.ResponseWriter, r *http.Request) {

@@ -129,7 +129,11 @@ async def fetch_user_context(user_id: str, api_base_url: str, service_api_key: s
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
-            vaults_data = await resp.json() if resp.status == 200 else {}
+            raw_vaults = await resp.json() if resp.status == 200 else {}
+            if isinstance(raw_vaults, dict) and raw_vaults.get("success"):
+                vaults_data = raw_vaults.get("data") or {}
+            else:
+                vaults_data = raw_vaults
 
         # Fetch recent performance snapshots (best-effort)
         async with session.get(
@@ -137,7 +141,11 @@ async def fetch_user_context(user_id: str, api_base_url: str, service_api_key: s
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
-            performance_data = await resp.json() if resp.status == 200 else {}
+            raw_perf = await resp.json() if resp.status == 200 else {}
+            if isinstance(raw_perf, dict) and raw_perf.get("success"):
+                performance_data = raw_perf.get("data") or {}
+            else:
+                performance_data = raw_perf
 
         savings_goals: list[dict[str, Any]] = []
         async with session.get(

@@ -38,6 +38,14 @@ func (m *mockSavingsGoalService) Create(_ context.Context, userID uuid.UUID, in 
 	return g, nil
 }
 
+func (m *mockSavingsGoalService) Get(_ context.Context, userID, goalID uuid.UUID) (savingsgoal.SavingsGoal, error) {
+	g, ok := m.goals[goalID]
+	if !ok || g.UserID != userID {
+		return savingsgoal.SavingsGoal{}, savingsgoal.ErrGoalNotFound
+	}
+	return g, nil
+}
+
 func (m *mockSavingsGoalService) List(_ context.Context, userID uuid.UUID) ([]savingsgoal.SavingsGoal, error) {
 	var out []savingsgoal.SavingsGoal
 	for _, g := range m.goals {

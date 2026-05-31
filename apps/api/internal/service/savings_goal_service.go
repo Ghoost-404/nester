@@ -52,6 +52,17 @@ func (s *SavingsGoalService) Create(ctx context.Context, userID uuid.UUID, in Cr
 	return s.enrichProgress(ctx, *goal)
 }
 
+func (s *SavingsGoalService) Get(ctx context.Context, userID, goalID uuid.UUID) (savingsgoal.SavingsGoal, error) {
+	goal, err := s.repo.GetByID(ctx, goalID)
+	if err != nil {
+		return savingsgoal.SavingsGoal{}, err
+	}
+	if goal.UserID != userID {
+		return savingsgoal.SavingsGoal{}, savingsgoal.ErrGoalNotFound
+	}
+	return s.enrichProgress(ctx, *goal)
+}
+
 func (s *SavingsGoalService) List(ctx context.Context, userID uuid.UUID) ([]savingsgoal.SavingsGoal, error) {
 	goals, err := s.repo.ListByUser(ctx, userID)
 	if err != nil {

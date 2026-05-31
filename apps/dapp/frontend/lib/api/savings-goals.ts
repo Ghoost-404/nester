@@ -19,6 +19,7 @@ export interface CreateSavingsGoalInput {
 
 export const savingsGoals = {
   list: () => apiRequest<SavingsGoal[]>("/users/savings-goals"),
+  get: (id: string) => apiRequest<SavingsGoal>(`/users/savings-goals/${id}`),
   create: (input: CreateSavingsGoalInput) =>
     apiRequest<SavingsGoal>("/users/savings-goals", {
       method: "POST",
