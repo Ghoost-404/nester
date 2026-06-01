@@ -27,9 +27,17 @@ type Config struct {
 	log                   LogConfig
 	allowedOrigins        []string
 	performance           PerformanceConfig
+	tvl                   TVLConfig
+	apyRefresh            APYRefreshConfig
 	startup               StartupConfig
 	bank                  BankConfig
 	transactionPoller     TransactionPollerConfig
+	intelligence          IntelligenceConfig
+}
+
+type IntelligenceConfig struct {
+	serviceURL string
+	timeout    time.Duration
 }
 
 // TransactionPollerConfig governs the background loop that reconciles pending
@@ -50,6 +58,17 @@ type StartupConfig struct {
 
 type PerformanceConfig struct {
 	snapshotInterval time.Duration
+}
+
+// TVLConfig governs the background TVL snapshot worker.
+type TVLConfig struct {
+	refreshInterval time.Duration
+}
+
+// APYRefreshConfig governs polling yield_registry for on-chain APY updates.
+type APYRefreshConfig struct {
+	refreshInterval       time.Duration
+	broadcastThresholdBPS int
 }
 
 type ServerConfig struct {
@@ -75,9 +94,10 @@ type StellarConfig struct {
 	horizonURL                string
 	operatorSecret            string
 	stellarUSDCIssuer         string
-	harvestDefaultCompound    bool
-	withdrawalSlippageBps     int
+	yieldRegistryContract     string
 	allocationStrategyAddress string
+	withdrawalSlippageBps     int
+	harvestDefaultCompound    bool
 }
 
 type AllocationConfig struct {
@@ -92,6 +112,7 @@ type IntelligenceConfig struct {
 
 type AuthConfig struct {
 	secret          string
+	serviceAPIKey   string
 	tokenExpiry     time.Duration
 	challengeExpiry time.Duration
 }
@@ -158,9 +179,10 @@ func Load() (*Config, error) {
 			horizonURL:                loader.requiredURL("STELLAR_HORIZON_URL"),
 			operatorSecret:            loader.stringDefault("STELLAR_OPERATOR_SECRET", ""),
 			stellarUSDCIssuer:         loader.stringDefault("STELLAR_USDC_ISSUER", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
-			harvestDefaultCompound:    loader.boolDefault("HARVEST_DEFAULT_COMPOUND", true),
-			withdrawalSlippageBps:     loader.intDefault("WITHDRAWAL_SLIPPAGE_BPS", 50),
+			yieldRegistryContract:     loader.stringDefault("YIELD_REGISTRY_CONTRACT", ""),
 			allocationStrategyAddress: loader.stringDefault("STELLAR_ALLOCATION_STRATEGY_ADDRESS", ""),
+			withdrawalSlippageBps:     loader.intDefault("WITHDRAWAL_SLIPPAGE_BPS", 50),
+			harvestDefaultCompound:    loader.boolDefault("HARVEST_DEFAULT_COMPOUND", true),
 		},
 		intelligence: IntelligenceConfig{
 			baseURL:       loader.stringDefault("INTELLIGENCE_BASE_URL", "http://localhost:8000"),
@@ -176,6 +198,7 @@ func Load() (*Config, error) {
 		settlementProviderURL: loader.stringDefault("SETTLEMENT_PROVIDER_URL", ""),
 		auth: AuthConfig{
 			secret:          loader.requiredString("AUTH_JWT_SECRET"),
+			serviceAPIKey:   loader.stringDefault("NESTER_SERVICE_API_KEY", ""),
 			tokenExpiry:     loader.durationDefault("AUTH_TOKEN_EXPIRY", 24*time.Hour),
 			challengeExpiry: loader.durationDefault("AUTH_CHALLENGE_EXPIRY", 5*time.Minute),
 		},
@@ -195,6 +218,13 @@ func Load() (*Config, error) {
 		performance: PerformanceConfig{
 			snapshotInterval: loader.durationDefault("PERFORMANCE_SNAPSHOT_INTERVAL", 1*time.Hour),
 		},
+		tvl: TVLConfig{
+			refreshInterval: loader.durationDefault("TVL_REFRESH_INTERVAL", 15*time.Minute),
+		},
+		apyRefresh: APYRefreshConfig{
+			refreshInterval:       loader.durationDefault("APY_REFRESH_INTERVAL", 5*time.Minute),
+			broadcastThresholdBPS: loader.intDefault("APY_BROADCAST_THRESHOLD", 50),
+		},
 		startup: StartupConfig{
 			enableAutoMigrate: loader.boolDefault("RUN_MIGRATIONS", false),
 			migrationsDir:     loader.stringDefault("MIGRATIONS_DIR", "./migrations"),
@@ -203,6 +233,10 @@ func Load() (*Config, error) {
 		bank: BankConfig{
 			paystackKey:    loader.stringDefault("PAYSTACK_SECRET_KEY", ""),
 			flutterwaveKey: loader.stringDefault("FLUTTERWAVE_SECRET_KEY", ""),
+		},
+		intelligence: IntelligenceConfig{
+			serviceURL: loader.stringDefault("INTELLIGENCE_SERVICE_URL", "http://localhost:8000"),
+			timeout:    loader.durationDefault("INTELLIGENCE_SERVICE_TIMEOUT", 30*time.Second),
 		},
 		transactionPoller: TransactionPollerConfig{
 			enabled:  loader.boolDefault("TX_POLLER_ENABLED", true),
@@ -304,6 +338,26 @@ func (p PerformanceConfig) SnapshotInterval() time.Duration {
 	return p.snapshotInterval
 }
 
+func (c Config) TVL() TVLConfig {
+	return c.tvl
+}
+
+func (t TVLConfig) RefreshInterval() time.Duration {
+	return t.refreshInterval
+}
+
+func (c Config) APYRefresh() APYRefreshConfig {
+	return c.apyRefresh
+}
+
+func (a APYRefreshConfig) RefreshInterval() time.Duration {
+	return a.refreshInterval
+}
+
+func (a APYRefreshConfig) BroadcastThresholdBPS() int {
+	return a.broadcastThresholdBPS
+}
+
 // AllowedOrigins returns the list of origins permitted to make cross-origin
 // requests to the API. An empty slice disables cross-origin access.
 func (c Config) AllowedOrigins() []string {
@@ -318,6 +372,18 @@ func (r RedisConfig) Addr() string {
 
 func (c Config) Bank() BankConfig {
 	return c.bank
+}
+
+func (c Config) Intelligence() IntelligenceConfig {
+	return c.intelligence
+}
+
+func (i IntelligenceConfig) ServiceURL() string {
+	return i.serviceURL
+}
+
+func (i IntelligenceConfig) Timeout() time.Duration {
+	return i.timeout
 }
 
 func (c Config) TransactionPoller() TransactionPollerConfig {
@@ -443,6 +509,18 @@ func (c *Config) validate(loader *envLoader) {
 		loader.addError("PERFORMANCE_SNAPSHOT_INTERVAL must be greater than 0")
 	}
 
+	if c.tvl.refreshInterval <= 0 {
+		loader.addError("TVL_REFRESH_INTERVAL must be greater than 0")
+	}
+
+	if c.apyRefresh.refreshInterval <= 0 {
+		loader.addError("APY_REFRESH_INTERVAL must be greater than 0")
+	}
+
+	if c.apyRefresh.broadcastThresholdBPS < 0 {
+		loader.addError("APY_BROADCAST_THRESHOLD must not be negative")
+	}
+
 	if c.transactionPoller.interval <= 0 {
 		loader.addError("TX_POLLER_INTERVAL must be greater than 0")
 	}
@@ -553,16 +631,20 @@ func (s StellarConfig) OperatorSecret() string {
 	return s.operatorSecret
 }
 
-func (s StellarConfig) HarvestDefaultCompound() bool {
-	return s.harvestDefaultCompound
+func (s StellarConfig) YieldRegistryContract() string {
+	return s.yieldRegistryContract
+}
+
+func (s StellarConfig) AllocationStrategyAddress() string {
+	return s.allocationStrategyAddress
 }
 
 func (s StellarConfig) WithdrawalSlippageBps() int {
 	return s.withdrawalSlippageBps
 }
 
-func (s StellarConfig) AllocationStrategyAddress() string {
-	return s.allocationStrategyAddress
+func (s StellarConfig) HarvestDefaultCompound() bool {
+	return s.harvestDefaultCompound
 }
 
 func (a AllocationConfig) MinWeightPercent() int {
@@ -579,6 +661,10 @@ func (l LogConfig) Format() string {
 
 func (a AuthConfig) Secret() string {
 	return a.secret
+}
+
+func (a AuthConfig) ServiceAPIKey() string {
+	return a.serviceAPIKey
 }
 
 func (a AuthConfig) TokenExpiry() time.Duration {

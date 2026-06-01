@@ -1,3 +1,5 @@
+"""Public model re-exports."""
+
 from app.models.recommendation import (
     ConfidenceLevel,
     Recommendation,

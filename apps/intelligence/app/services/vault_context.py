@@ -32,7 +32,7 @@ class VaultContextFetcher:
 
         Returns list of vault dicts: {name, balance_usd, apy, allocation_breakdown}
         """
-        url = f"{self.api_base_url}/api/v1/users/{user_id}/vaults"
+        url = f"{self.api_base_url}/api/v1/user-vaults/{user_id}"
         headers = {
             "Authorization": f"Bearer {self.service_api_key}",
             "Content-Type": "application/json"
@@ -42,10 +42,12 @@ class VaultContextFetcher:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
-                        data = await response.json()
+                        payload = await response.json()
+                        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+                        vault_rows = data.get("vaults", []) if isinstance(data, dict) else []
                         # Transform to expected format
                         vaults = []
-                        for vault in data.get("vaults", []):
+                        for vault in vault_rows:
                             # Calculate allocation breakdown as percentages
                             total_balance = vault.get("total_balance_usd", 0)
                             allocation_breakdown = {}
@@ -133,7 +135,15 @@ class VaultContextFetcher:
                     for vault in raw_vaults:
                         if not isinstance(vault, dict):
                             continue
-                            vaults.append({
+                        name = vault.get(
+                            "name",
+                            vault.get("contract_address", "Unknown Vault"),
+                        )
+                        balance = vault.get(
+                            "current_balance",
+                            vault.get("total_balance_usd", 0),
+                        )
+                        vaults.append({
                                 "id": vault.get("id", ""),
                                 "name": vault.get(
                                     "name",

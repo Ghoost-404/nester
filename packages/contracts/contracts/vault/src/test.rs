@@ -417,6 +417,57 @@ fn performance_fee_charges_only_realized_yield_not_principal() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Impairment regression test (issue #451 / PR #275)
+//
+// The original performance-fee issue explicitly required:
+//   "User deposits at rate 1.0, rate halves (impairment) → zero performance fee."
+//
+// The withdraw path skips the performance fee whenever `yield_part =
+// assets_to_withdraw - principal` is not strictly positive. This test proves
+// that zero-performance-fee invariant holds after a loss halves the share
+// price, so an impaired position is never charged a fee on a gain it never had.
+// ---------------------------------------------------------------------------
+#[test]
+fn impairment_charges_zero_performance_fee() {
+    let (env, admin, token, vault, _treasury) = setup();
+    let user = Address::generate(&env);
+    let deposit = 1_000 * XLM;
+    mint(&token, &user, deposit);
+
+    // Disable the early-withdrawal fee so the assertion isolates performance-fee
+    // behaviour and the withdrawn amount is unambiguous.
+    let mut fee_config: FeeConfig = vault.get_fee_config();
+    fee_config.early_withdrawal_fee_bps = 0;
+    vault.set_fee_config(&admin, &fee_config);
+
+    // Deposit at the initial share price of 1.0.
+    vault.deposit(&user, &deposit, &0);
+    assert_eq!(vault.share_price(), 10_000_000, "deposit should occur at rate 1.0");
+
+    // Impairment: report a loss that halves the share price (1.0 -> 0.5).
+    vault.grant_role(&admin, &admin, &Role::Manager);
+    vault.report_yield(&admin, &(-(500 * XLM)));
+    assert_eq!(vault.share_price(), 5_000_000, "rate should halve after impairment");
+
+    // The preview must show no performance fee owed on an impaired position.
+    let shares = vault.get_shares(&user);
+    let preview = vault.withdrawal_fee_preview(&user, &shares);
+    assert_eq!(
+        preview.performance_fee_deducted, 0,
+        "no performance fee may be charged when the position has lost value"
+    );
+
+    // The actual withdrawal returns the impaired value (500 XLM) with no fees
+    // siphoned off: 1000 shares now worth 0.5 each.
+    vault.withdraw(&user, &shares, &0);
+    assert_eq!(
+        token::Client::new(&env, &token.address).balance(&user),
+        500 * XLM,
+        "user receives the full impaired value with zero performance fee"
+    );
+}
+
 #[test]
 #[should_panic(expected = "Error(Contract, #17)")]
 fn withdraw_reverts_when_min_assets_out_is_not_met() {

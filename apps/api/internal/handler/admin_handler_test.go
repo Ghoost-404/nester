@@ -250,7 +250,7 @@ func (s *adminHandlerStubService) TriggerRebalance(_ context.Context, id uuid.UU
 func TestAdminHandlerGetDashboard(t *testing.T) {
 	vaultID := uuid.New()
 	svc := newAdminHandlerStubService(vaultID)
-	h := NewAdminHandler(svc)
+	h := NewAdminHandler(svc, nil)
 
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -284,7 +284,7 @@ func TestAdminHandlerGetDashboard(t *testing.T) {
 
 func TestAdminHandlerAuthDashboardRequiresAdmin(t *testing.T) {
 	vaultID := uuid.New()
-	h := NewAdminHandler(newAdminHandlerStubService(vaultID))
+	h := NewAdminHandler(newAdminHandlerStubService(vaultID), nil)
 
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -292,7 +292,7 @@ func TestAdminHandlerAuthDashboardRequiresAdmin(t *testing.T) {
 	rules := []middleware.RouteRule{
 		{PathPrefix: "/api/v1/admin/", Role: "admin"},
 	}
-	protected := middleware.Authenticate("admin-test-secret", rules)(mux)
+	protected := middleware.Authenticate("admin-test-secret", "", rules)(mux)
 	server := httptest.NewServer(protected)
 	defer server.Close()
 
@@ -325,7 +325,7 @@ func TestAdminHandlerListPauseVerifyFlow(t *testing.T) {
 	vaultID := uuid.New()
 	svc := newAdminHandlerStubService(vaultID)
 
-	h := NewAdminHandler(svc)
+	h := NewAdminHandler(svc, nil)
 	mux := http.NewServeMux()
 	h.Register(mux)
 
@@ -382,7 +382,7 @@ func TestAdminHandlerListPauseVerifyFlow(t *testing.T) {
 
 func TestAdminHandlerDateFilterValidation(t *testing.T) {
 	vaultID := uuid.New()
-	h := NewAdminHandler(newAdminHandlerStubService(vaultID))
+	h := NewAdminHandler(newAdminHandlerStubService(vaultID), nil)
 	mux := http.NewServeMux()
 	h.Register(mux)
 
@@ -403,7 +403,7 @@ func TestAdminHandlerDateFilterValidation(t *testing.T) {
 func TestAdminHandlerAuthListPauseVerify(t *testing.T) {
 	vaultID := uuid.New()
 	svc := newAdminHandlerStubService(vaultID)
-	h := NewAdminHandler(svc)
+	h := NewAdminHandler(svc, nil)
 
 	mux := http.NewServeMux()
 	h.Register(mux)
@@ -411,7 +411,7 @@ func TestAdminHandlerAuthListPauseVerify(t *testing.T) {
 	rules := []middleware.RouteRule{
 		{PathPrefix: "/api/v1/admin/", Role: "admin"},
 	}
-	protected := middleware.Authenticate("admin-test-secret", rules)(mux)
+	protected := middleware.Authenticate("admin-test-secret", "", rules)(mux)
 	server := httptest.NewServer(protected)
 	defer server.Close()
 
@@ -466,14 +466,14 @@ func TestAdminHandlerAuthListPauseVerify(t *testing.T) {
 
 func TestAdminHandlerRebalanceAuth(t *testing.T) {
 	vaultID := uuid.New()
-	h := NewAdminHandler(newAdminHandlerStubService(vaultID))
+	h := NewAdminHandler(newAdminHandlerStubService(vaultID), nil)
 	mux := http.NewServeMux()
 	h.Register(mux)
 
 	rules := []middleware.RouteRule{
 		{PathPrefix: "/api/v1/admin/", Role: "admin"},
 	}
-	protected := middleware.Authenticate("admin-test-secret", rules)(mux)
+	protected := middleware.Authenticate("admin-test-secret", "", rules)(mux)
 	server := httptest.NewServer(protected)
 	defer server.Close()
 
@@ -507,12 +507,12 @@ func TestAdminHandlerRebalanceAuth(t *testing.T) {
 func TestAdminHandlerAllocationEndpointsRequireAdmin(t *testing.T) {
 	vaultID := uuid.New()
 	allocationID := uuid.New()
-	h := NewAdminHandler(newAdminHandlerStubService(vaultID))
+	h := NewAdminHandler(newAdminHandlerStubService(vaultID), nil)
 
 	mux := http.NewServeMux()
 	h.Register(mux)
 	rules := []middleware.RouteRule{{PathPrefix: "/api/v1/admin/", Role: "admin"}}
-	protected := middleware.Authenticate("admin-test-secret", rules)(mux)
+	protected := middleware.Authenticate("admin-test-secret", "", rules)(mux)
 	server := httptest.NewServer(protected)
 	defer server.Close()
 

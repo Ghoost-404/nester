@@ -70,7 +70,7 @@ func (c *PrometheusClient) GetVaultRecommendations(ctx context.Context, vaultID 
 	}
 
 	endpoint := fmt.Sprintf(
-		"%s/api/v1/vaults/%s/recommendations",
+		"%s/vaults/%s/recommendations",
 		c.cfg.BaseURL,
 		url.PathEscape(vaultID),
 	)
@@ -95,7 +95,7 @@ func (c *PrometheusClient) GetMarketSentiment(ctx context.Context) (*intelligenc
 		return nil, fmt.Errorf("prometheus service unavailable (circuit open)")
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v1/intelligence/market", c.cfg.BaseURL)
+	endpoint := fmt.Sprintf("%s/market/sentiment", c.cfg.BaseURL)
 	var report intelligence.SentimentReport
 	err := c.doRequest(ctx, endpoint, &report)
 	if err != nil {
@@ -118,7 +118,7 @@ func (c *PrometheusClient) GetPortfolioInsights(ctx context.Context, userID stri
 	}
 
 	endpoint := fmt.Sprintf(
-		"%s/api/v1/users/%s/insights",
+		"%s/portfolio/%s/insights",
 		c.cfg.BaseURL,
 		url.PathEscape(userID),
 	)
