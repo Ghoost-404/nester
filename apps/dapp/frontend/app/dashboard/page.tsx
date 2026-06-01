@@ -30,6 +30,8 @@ import { profileApi } from "@/lib/api/profile";
 import { useTokenPrices } from "@/hooks/useTokenPrices";
 import { useNetwork } from "@/hooks/useNetwork";
 import { AppShell } from "@/components/app-shell";
+import { useOfflineStatus } from "@/hooks/useOfflineStatus";
+import { formatDistanceToNow } from "date-fns";
 
 const CHART_PERIODS = ["1D", "1W", "1M", "6M", "1Y", "All"] as const;
 
@@ -57,6 +59,7 @@ export default function Dashboard() {
     const [selectedPosition, setSelectedPosition] = useState<PortfolioPosition | null>(null);
     const [chartPeriod, setChartPeriod] = useState<(typeof CHART_PERIODS)[number]>("1W");
     const [onboardingOpen, setOnboardingOpen] = useState(false);
+    const { isOffline, lastSynced } = useOfflineStatus();
 
     useEffect(() => {
         if (!isConnected) return;
@@ -136,6 +139,11 @@ export default function Dashboard() {
                             ${protocolBalanceUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                         <p className="mt-2 text-[12px] text-black/35 tracking-wide">Protocol Balance</p>
+                        {lastSynced && (
+                            <p className="mt-1.5 text-[11px] text-black/25">
+                                Last updated {formatDistanceToNow(lastSynced)} ago
+                            </p>
+                        )}
                     </div>
                     <div className="mt-8 space-y-5">
                         <div className="flex items-center justify-between">
