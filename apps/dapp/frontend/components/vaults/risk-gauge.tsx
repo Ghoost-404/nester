@@ -87,19 +87,30 @@ export default function RiskGauge({ vaultId }: RiskGaugeProps) {
 }
 export { RiskGauge };
 
-function normalizeRiskData(data: any): RiskData {
-  const dimensions = Array.isArray(data?.dimensions) ? data.dimensions : [];
+function normalizeRiskData(data: Record<string, unknown>): RiskData {
+  const dimensions = Array.isArray(data?.dimensions) ? (data.dimensions as Array<{name: string; score: number}>) : [];
   const scoreFor = (name: string) =>
-    dimensions.find((dimension: any) =>
+    dimensions.find((dimension: {name: string; score: number}) =>
       String(dimension?.name ?? "").toLowerCase().includes(name)
     )?.score ?? 0;
 
+  const getNumber = (value: unknown, fallback: unknown = 0): number => {
+    if (typeof value === "number") return value;
+    if (typeof fallback === "number") return fallback;
+    return 0;
+  };
+
+  const getString = (value: unknown, fallback: string = "Unknown"): string => {
+    if (typeof value === "string") return value;
+    return fallback;
+  };
+
   return {
-    overall: data?.overall ?? data?.score ?? 0,
-    tier: data?.tier ?? data?.level ?? "Unknown",
-    concentration_risk: data?.concentration_risk ?? scoreFor("concentration"),
-    protocol_risk: data?.protocol_risk ?? scoreFor("protocol"),
-    yield_volatility: data?.yield_volatility ?? scoreFor("yield"),
-    liquidity_risk: data?.liquidity_risk ?? scoreFor("liquidity"),
+    overall: getNumber(data?.overall, data?.score),
+    tier: getString(data?.tier, getString(data?.level, "Unknown")),
+    concentration_risk: data?.concentration_risk ? getNumber(data.concentration_risk) : scoreFor("concentration"),
+    protocol_risk: data?.protocol_risk ? getNumber(data.protocol_risk) : scoreFor("protocol"),
+    yield_volatility: data?.yield_volatility ? getNumber(data.yield_volatility) : scoreFor("yield"),
+    liquidity_risk: data?.liquidity_risk ? getNumber(data.liquidity_risk) : scoreFor("liquidity"),
   };
 }

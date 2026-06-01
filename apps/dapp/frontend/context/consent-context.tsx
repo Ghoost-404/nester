@@ -30,9 +30,12 @@ export function ConsentProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const stored = parseConsent(localStorage.getItem(CONSENT_STORAGE_KEY));
-    setConsent(stored);
-    setShowBanner(!stored.decided);
-    setHydrated(true);
+    const timer = setTimeout(() => {
+      setConsent(stored);
+      setShowBanner(!stored.decided);
+      setHydrated(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   const persist = useCallback((next: ConsentPreferences) => {
