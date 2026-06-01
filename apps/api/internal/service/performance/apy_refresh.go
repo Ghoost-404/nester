@@ -182,7 +182,7 @@ func (r *APYRefresher) refreshVault(ctx context.Context, v vault.Vault, now time
 	r.cachedAPYB[v.ID] = weightedBPS
 	r.mu.Unlock()
 
-	if hadPrev && absDiffBPS(prev, weightedBPS) >= uint32(r.cfg.BroadcastThresholdBPS) {
+	if hadPrev && int(absDiffBPS(prev, weightedBPS)) >= r.cfg.BroadcastThresholdBPS {
 		r.broadcast(v.ID, prev, weightedBPS)
 	}
 

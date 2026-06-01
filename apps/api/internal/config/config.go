@@ -88,12 +88,19 @@ type DatabaseConfig struct {
 }
 
 type StellarConfig struct {
-	networkPassphrase     string
-	rpcURL                string
-	horizonURL            string
-	operatorSecret        string
-	stellarUSDCIssuer     string
-	yieldRegistryContract string
+	networkPassphrase         string
+	rpcURL                    string
+	horizonURL                string
+	operatorSecret            string
+	stellarUSDCIssuer         string
+	yieldRegistryContract     string
+	allocationStrategyAddress string
+	withdrawalSlippageBps     int
+	harvestDefaultCompound    bool
+}
+
+type AllocationConfig struct {
+	minWeightPercent int
 }
 
 type AuthConfig struct {
@@ -160,12 +167,18 @@ func Load() (*Config, error) {
 			connectionTimeout: loader.durationDefault("DATABASE_CONNECTION_TIMEOUT", 5*time.Second),
 		},
 		stellar: StellarConfig{
-			networkPassphrase:     loader.requiredString("STELLAR_NETWORK_PASSPHRASE"),
-			rpcURL:                loader.requiredURL("STELLAR_RPC_URL"),
-			horizonURL:            loader.requiredURL("STELLAR_HORIZON_URL"),
-			operatorSecret:        loader.stringDefault("STELLAR_OPERATOR_SECRET", ""),
-			stellarUSDCIssuer:     loader.stringDefault("STELLAR_USDC_ISSUER", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
-			yieldRegistryContract: loader.stringDefault("YIELD_REGISTRY_CONTRACT", ""),
+			networkPassphrase:         loader.requiredString("STELLAR_NETWORK_PASSPHRASE"),
+			rpcURL:                    loader.requiredURL("STELLAR_RPC_URL"),
+			horizonURL:                loader.requiredURL("STELLAR_HORIZON_URL"),
+			operatorSecret:            loader.stringDefault("STELLAR_OPERATOR_SECRET", ""),
+			stellarUSDCIssuer:         loader.stringDefault("STELLAR_USDC_ISSUER", "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"),
+			yieldRegistryContract:     loader.stringDefault("YIELD_REGISTRY_CONTRACT", ""),
+			allocationStrategyAddress: loader.stringDefault("STELLAR_ALLOCATION_STRATEGY_ADDRESS", ""),
+			withdrawalSlippageBps:     loader.intDefault("WITHDRAWAL_SLIPPAGE_BPS", 50),
+			harvestDefaultCompound:    loader.boolDefault("HARVEST_DEFAULT_COMPOUND", true),
+		},
+		allocation: AllocationConfig{
+			minWeightPercent: loader.intDefault("MIN_ALLOCATION_WEIGHT", 5),
 		},
 		redis: RedisConfig{
 			addr: loader.stringDefault("REDIS_ADDR", ""),
@@ -592,6 +605,22 @@ func (s StellarConfig) OperatorSecret() string {
 
 func (s StellarConfig) YieldRegistryContract() string {
 	return s.yieldRegistryContract
+}
+
+func (s StellarConfig) AllocationStrategyAddress() string {
+	return s.allocationStrategyAddress
+}
+
+func (s StellarConfig) WithdrawalSlippageBps() int {
+	return s.withdrawalSlippageBps
+}
+
+func (s StellarConfig) HarvestDefaultCompound() bool {
+	return s.harvestDefaultCompound
+}
+
+func (a AllocationConfig) MinWeightPercent() int {
+	return a.minWeightPercent
 }
 
 func (l LogConfig) Level() string {

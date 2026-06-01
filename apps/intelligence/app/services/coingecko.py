@@ -166,13 +166,21 @@ class CoinGeckoClient:
             elif vol_ratio < 0.02:
                 signal = "bear"
 
-        result = {
-            "signal": signal,
-            "defi_market_cap_usd": market_cap,
-            "defi_dominance_pct": dominance,
-        }
-        _cache_set(cache_key, result, _TTL_SENTIMENT)
-        return MarketSentiment(**result)
+        sentiment = MarketSentiment(
+            signal=signal,
+            defi_market_cap_usd=market_cap,
+            defi_dominance_pct=dominance,
+        )
+        _cache_set(
+            cache_key,
+            {
+                "signal": sentiment.signal,
+                "defi_market_cap_usd": sentiment.defi_market_cap_usd,
+                "defi_dominance_pct": sentiment.defi_dominance_pct,
+            },
+            _TTL_SENTIMENT,
+        )
+        return sentiment
 
 
 _default_client: CoinGeckoClient | None = None

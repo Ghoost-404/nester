@@ -120,7 +120,7 @@ export default function OfframpPage() {
     const router = useRouter();
 
     // In a real app, this would come from the user's KYC state loaded via API
-    const kycStatus: KYCStatus = "unverified";
+    const [kycStatus] = useState<KYCStatus>("unverified");
 
     const {
         handleSubmit,

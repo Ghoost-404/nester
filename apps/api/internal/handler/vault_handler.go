@@ -381,48 +381,71 @@ func (h *VaultHandler) getMyPosition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, err := uuid.Parse(user.ID)
+	if err != nil {
+		response.WriteJSON(w, http.StatusUnauthorized, response.Err(http.StatusUnauthorized, "UNAUTHORIZED", "invalid token subject"))
+		return
+	}
+
+	position, err := h.service.GetMyPosition(r.Context(), userID, vaultID)
+	if err != nil {
+		h.writeDomainError(w, r, err)
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, response.OK(position))
+}
+
+func (h *VaultHandler) depositToVault(w http.ResponseWriter, r *http.Request) {
+	vaultID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("vault id must be a valid UUID"))
+		return
+	}
+
+	user, ok := auth.GetUserFromContext(r.Context())
+	if !ok {
+		response.WriteJSON(w, http.StatusUnauthorized, response.Err(http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized"))
+		return
+	}
+
 	var request depositRequest
 	if err := decodeJSON(r, &request); err != nil {
 		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr(err.Error()))
 		return
 	}
 
-	// Parse amount string to decimal
 	amount, err := stringToDecimal(request.Amount)
 	if err != nil {
 		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("invalid amount: must be a valid decimal number"))
 		return
 	}
 
-	// Validate amount is positive
 	if amount.IsNegative() || amount.IsZero() {
 		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("amount must be greater than zero"))
 		return
 	}
 
-	// Validate asset code
 	if err := validateCurrencyCode(request.Asset); err != nil {
 		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("invalid asset: "+err.Error()))
 		return
 	}
 
-	// Verify vault ownership
-	vault, err := h.service.GetVault(r.Context(), vaultID)
+	vaultModel, err := h.service.GetVault(r.Context(), vaultID)
 	if err != nil {
 		h.writeDomainError(w, r, err)
 		return
 	}
 
-	if vault.UserID.String() != user.ID {
+	if vaultModel.UserID.String() != user.ID {
 		response.WriteJSON(w, http.StatusForbidden, response.Err(http.StatusForbidden, "FORBIDDEN", "forbidden"))
 		return
 	}
 
-	// Record deposit
 	updatedVault, err := h.service.RecordDeposit(r.Context(), service.RecordDepositInput{
 		VaultID: vaultID,
 		Amount:  amount,
-		TxHash:  "", // TxHash would be set by the on-chain invoker or blockchain confirmation listener
+		TxHash:  "",
 	})
 	if err != nil {
 		h.writeDomainError(w, r, err)

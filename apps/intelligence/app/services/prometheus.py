@@ -11,6 +11,7 @@ import aiohttp
 import anthropic
 
 from app.config import settings
+from app.models.coaching import CoachingRequest, CoachingResponse
 from app.models.recommendation import (
     ConfidenceLevel,
     Recommendation,
@@ -320,7 +321,7 @@ portfolio."""
             )
         context_injection = [
             {
-                "role": cast(Literal["user", "assistant"], "user"),
+                "role": "user",
                 "content": (
                     "[PORTFOLIO CONTEXT — do not quote this back, "
                     "use it to personalise your response]\n"
@@ -333,7 +334,7 @@ portfolio."""
     messages: list[anthropic.types.MessageParam] = (
         context_injection
         + _to_anthropic_messages(history)
-        + [{"role": cast(Literal["user", "assistant"], "user"), "content": message}]
+        + [{"role": "user", "content": message}]
     )
 
     client = get_client()
@@ -368,9 +369,9 @@ def _json_strip(raw: str) -> str:
     return raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
 
-async def generate_coaching(request: Any) -> Any:
+async def generate_coaching(request: CoachingRequest) -> CoachingResponse:
     """Generate deposit schedule and progress assessment for a savings goal."""
-    from app.models.coaching import CoachingResponse, DepositScheduleItem
+    from app.models.coaching import DepositScheduleItem
 
     goal = request.goal
     portfolio = request.portfolio

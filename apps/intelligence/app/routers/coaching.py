@@ -23,4 +23,5 @@ async def coaching(
     claims: dict[str, Any] = Depends(verify_jwt),  # noqa: ARG001
 ) -> CoachingResponse:
     """Return a Prometheus-generated deposit schedule and progress assessment."""
-    return await generate_coaching(body)
+    result: CoachingResponse = await generate_coaching(body)
+    return result
