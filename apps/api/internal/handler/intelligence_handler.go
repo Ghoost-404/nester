@@ -24,20 +24,14 @@ func NewIntelligenceHandler(proxy *service.IntelligenceProxy, prometheus *servic
 }
 
 func (h *IntelligenceHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/vaults/{id}/recommendations", h.vaultRecommendations)
+	mux.HandleFunc("GET /api/v1/vaults/{id}/recommendations", h.GetVaultRecommendations)
 	mux.HandleFunc("GET /api/v1/intelligence/market", h.marketSentiment)
 	mux.HandleFunc("GET /api/v1/intelligence/recommend/vault", h.recommendVaultGet)
 	mux.HandleFunc("POST /api/v1/intelligence/recommend/vault", h.recommendVaultPost)
 	mux.HandleFunc("POST /api/v1/intelligence/coaching", h.coaching)
 	mux.HandleFunc("POST /api/v1/intelligence/analyze", h.analyze)
-	mux.HandleFunc("GET /api/v1/users/{userId}/insights", h.portfolioInsights)
-	mux.HandleFunc("GET /api/v1/portfolio/{user_id}/insights", h.portfolioInsightsByPath)
-}
-
-func (h *IntelligenceHandler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v1/vaults/{id}/recommendations", h.GetVaultRecommendations)
-	mux.HandleFunc("GET /api/v1/intelligence/market", h.GetMarketSentiment)
 	mux.HandleFunc("GET /api/v1/intelligence/portfolio/{userId}", h.GetPortfolioInsights)
+	mux.HandleFunc("GET /api/v1/portfolio/{user_id}/insights", h.portfolioInsightsByPath)
 	mux.HandleFunc("POST /api/v1/intelligence/savings-plan", h.CreateSavingsPlan)
 }
 
@@ -57,15 +51,6 @@ func (h *IntelligenceHandler) GetVaultRecommendations(w http.ResponseWriter, r *
 	}
 	recs, err := h.prometheus.GetVaultRecommendations(r.Context(), vaultID)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(recs)
 		logpkg.FromContext(r.Context()).Error("vault recommendations failed", "error", err.Error())
 		response.WriteJSON(w, http.StatusBadGateway, response.Err(http.StatusBadGateway, "UPSTREAM_ERROR", err.Error()))
 		return
@@ -84,18 +69,12 @@ func (h *IntelligenceHandler) marketSentiment(w http.ResponseWriter, r *http.Req
 	}
 	report, err := h.prometheus.GetMarketSentiment(r.Context())
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		logpkg.FromContext(r.Context()).Error("market sentiment failed", "error", err.Error())
 		response.WriteJSON(w, http.StatusBadGateway, response.Err(http.StatusBadGateway, "UPSTREAM_ERROR", err.Error()))
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, response.OK(report))
 }
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(report)
 func (h *IntelligenceHandler) recommendVaultGet(w http.ResponseWriter, r *http.Request) {
 	if h.proxy == nil {
 		response.WriteJSON(w, http.StatusServiceUnavailable, response.Err(http.StatusServiceUnavailable, "UNAVAILABLE", "intelligence not configured"))
@@ -143,40 +122,33 @@ func (h *IntelligenceHandler) portfolioInsights(w http.ResponseWriter, r *http.R
 	}
 	insights, err := h.prometheus.GetPortfolioInsights(r.Context(), userID)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(insights)
-}
-
-func (h *IntelligenceHandler) CreateSavingsPlan(w http.ResponseWriter, r *http.Request) {
-	var req intelligence.SavingsPlanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
-		return
-	}
-
-	plan, err := h.prometheus.CreateSavingsPlan(r.Context(), req)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		logpkg.FromContext(r.Context()).Error("portfolio insights failed", "error", err.Error())
 		response.WriteJSON(w, http.StatusBadGateway, response.Err(http.StatusBadGateway, "UPSTREAM_ERROR", err.Error()))
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, response.OK(insights))
 }
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(plan)
+func (h *IntelligenceHandler) CreateSavingsPlan(w http.ResponseWriter, r *http.Request) {
+	var req intelligence.SavingsPlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("invalid request body"))
+		return
+	}
+
+	if h.prometheus == nil {
+		response.WriteJSON(w, http.StatusServiceUnavailable, response.Err(http.StatusServiceUnavailable, "UNAVAILABLE", "intelligence not configured"))
+		return
+	}
+
+	plan, err := h.prometheus.CreateSavingsPlan(r.Context(), req)
+	if err != nil {
+		logpkg.FromContext(r.Context()).Error("create savings plan failed", "error", err.Error())
+		response.WriteJSON(w, http.StatusBadGateway, response.Err(http.StatusBadGateway, "UPSTREAM_ERROR", err.Error()))
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, response.OK(plan))
+}
 func (h *IntelligenceHandler) portfolioInsightsByPath(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("user_id")
 	if !h.authorizeUserInsights(w, r, userID) {

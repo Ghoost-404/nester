@@ -731,8 +731,6 @@ def _rank_vaults(
             if not vault_id:
                 continue
             risk = risk_scores.get(vault_id, {})
-            apy_val = float(vault.get("apy", 0.0) or 0.0)
-            risk_val = float(risk.get("overall", 100.0))
             ranked.append({
                 "id": vault_id,
                 "name": str(vault.get("name", "Vault")),
@@ -919,7 +917,6 @@ async def recommend_vaults(
         '"expected_yield_usdc": float, "confidence": "high"|"medium"|"low"}'
     )
     positions_json = json.dumps(user_vaults[:5])
-    snapshot = chr(10).join(user_context_lines) if user_context_lines else "none"
     prompt = (
         "Recommend the best vault or vault split for a Nester user. "
         "Use only the live context below. "
@@ -960,11 +957,6 @@ async def recommend_vaults(
         if not plan:
             return fallback
 
-        yield_key = "expected_yield_usdc"
-        parsed_yield = float(
-            parsed.get(yield_key, fallback.expected_yield_usdc)
-            or fallback.expected_yield_usdc,
-        )
         return VaultRecommendationResponse(
             recommended_vaults=plan,
             expected_yield_usdc=float(
@@ -1034,19 +1026,6 @@ async def analyze_recommendation(
             (b.text for b in response.content if isinstance(b, anthropic.types.TextBlock)), ""
         )
         parsed = json.loads(_json_strip(text))
-        default_disclaimer = "This is guidance, not financial advice."
-        conf_reason = (
-            str(parsed.get("confidence_reason", confidence_reason)).strip()
-            or confidence_reason
-        )
-        freshness = (
-            str(parsed.get("data_freshness", data_freshness)).strip()
-            or data_freshness
-        )
-        disclaimer = (
-            str(parsed.get("disclaimer", default_disclaimer)).strip()
-            or default_disclaimer
-        )
         return Recommendation(
             action=str(parsed.get("action", "Review your vault allocation")).strip(),
             rationale=str(parsed.get("rationale", "")).strip(),
@@ -1063,11 +1042,6 @@ async def analyze_recommendation(
         )
     except Exception:
         logger.exception("Failed to analyze recommendation prompt")
-        fallback_req = VaultRecommendationRequest(
-            risk_tolerance="moderate",
-            time_horizon_months=12,
-            initial_deposit_usdc=1.0,
-        )
         return Recommendation(
             action="Review your vault allocation",
             rationale=_fallback_rationale(

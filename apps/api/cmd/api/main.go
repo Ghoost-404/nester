@@ -357,7 +357,7 @@ func run() error {
 	intelProxy := service.NewIntelligenceProxy(intelURL, cfg.Intelligence().Timeout())
 	prometheusClient := service.NewPrometheusClient(service.PrometheusConfig{
 		BaseURL: intelURL,
-		APIKey:  cfg.Auth().ServiceAPIKey(),
+		APIKey:  cfg.Intelligence().ServiceAPIKey(),
 		Timeout: cfg.Intelligence().Timeout(),
 	})
 	intelligenceHandler := handler.NewIntelligenceHandler(intelProxy, prometheusClient)
@@ -365,7 +365,7 @@ func run() error {
 
 	intelRelay := service.NewRelayHandler(http.DefaultClient, service.RelayConfig{
 		BaseURL: intelURL,
-		APIKey:  cfg.Auth().ServiceAPIKey(),
+		APIKey:  cfg.Intelligence().ServiceAPIKey(),
 		Timeout: cfg.Intelligence().Timeout(),
 	})
 	intelligenceRelayHandler := handler.NewIntelligenceRelayHandler(intelRelay)
@@ -375,15 +375,6 @@ func run() error {
 	performanceSnapshotsHandler.Register(mux)
 
 	bankHandler.Register(mux)
-
-	// Intelligence / Prometheus AI
-	prometheusClient := service.NewPrometheusClient(service.PrometheusConfig{
-		BaseURL: cfg.Intelligence().BaseURL(),
-		APIKey:  cfg.Intelligence().ServiceAPIKey(),
-		Timeout: cfg.Intelligence().Timeout(),
-	})
-	intelligenceHandler := handler.NewIntelligenceHandler(prometheusClient)
-	intelligenceHandler.Register(mux)
 
 	mux.HandleFunc("GET /ws", wsHub.ServeWs)
 

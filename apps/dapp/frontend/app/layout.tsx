@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import { PortfolioProvider } from "@/components/portfolio-provider";
 import { WalletProvider } from "@/components/wallet-provider";
 import { NotificationsProvider } from "@/components/notifications-provider";
@@ -6,7 +7,15 @@ import { NotificationsToaster } from "@/components/notifications-toaster";
 import { WebSocketProvider } from "@/components/websocket-provider";
 import { ReactQueryProvider } from "@/components/react-query-provider";
 import { OfflineBanner } from "@/components/offline-banner";
+import { SettingsProvider } from "@/context/settings-context";
+import { OnboardingProvider } from "@/hooks/useOnboarding";
+import { NetworkProvider } from "@/context/NetworkProvider";
+import { NetworkBanner } from "@/components/network/NetworkSelector";
+import { PrometheusChatbot } from "@/components/ai/prometheusChatbot";
+import { A11yAudit } from "@/components/A11yAudit";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
     title: "Nester | DApp",
@@ -17,13 +26,6 @@ export const metadata: Metadata = {
         apple: "/logo.png",
     },
 };
-
-import { SettingsProvider } from "@/context/settings-context";
-import { OnboardingProvider } from "@/hooks/useOnboarding";
-import { NetworkProvider } from "@/context/NetworkProvider";
-import { NetworkBanner } from "@/components/network/NetworkSelector";
-import { PrometheusChatbot } from "@/components/ai/prometheusChatbot";
-import { A11yAudit } from "@/components/A11yAudit";
 
 export default function RootLayout({
     children,

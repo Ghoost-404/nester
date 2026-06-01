@@ -405,6 +405,21 @@ func (h *VaultHandler) getProjection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projection, err := h.service.GetProjection(r.Context(), vaultID)
+	if err != nil {
+		h.writeDomainError(w, r, err)
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, response.OK(projection))
+}
+
+func (h *VaultHandler) depositToVault(w http.ResponseWriter, r *http.Request) {
+	vaultID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.WriteJSON(w, http.StatusBadRequest, response.ValidationErr("vault id must be a valid UUID"))
+		return
+	}
+
 	user, ok := auth.GetUserFromContext(r.Context())
 	if !ok {
 		response.WriteJSON(w, http.StatusUnauthorized, response.Err(http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized"))
@@ -518,7 +533,7 @@ func (h *VaultHandler) withdrawFromVault(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, response.OK(projection))
+	response.WriteJSON(w, http.StatusOK, response.OK(updatedVault))
 }
 
 func (h *VaultHandler) writeDomainError(w http.ResponseWriter, r *http.Request, err error) {

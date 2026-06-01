@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 
 from app.dependencies.auth import verify_jwt
 from app.models.savings import SavingsPlanRequest, SavingsPlanResponse

@@ -135,14 +135,6 @@ class VaultContextFetcher:
                     for vault in raw_vaults:
                         if not isinstance(vault, dict):
                             continue
-                        name = vault.get(
-                            "name",
-                            vault.get("contract_address", "Unknown Vault"),
-                        )
-                        balance = vault.get(
-                            "current_balance",
-                            vault.get("total_balance_usd", 0),
-                        )
                         vaults.append({
                                 "id": vault.get("id", ""),
                                 "name": vault.get(
