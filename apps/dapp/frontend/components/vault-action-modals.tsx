@@ -687,6 +687,7 @@ export function WithdrawModal({
                 walletAddress: address,
                 contractId,
                 shares: quote.sharesBurned,
+                minAssetsOut: quote.netAmount,
             });
             const signedXdr = await signTransaction(xdr);
 
