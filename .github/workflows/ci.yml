@@ -361,9 +361,33 @@ jobs:
       - name: Build allocation_strategy WASM
         run: cargo build --release --target wasm32-unknown-unknown -p allocation-strategy-contract
 
-      - name: Build vault_token WASM
+      - name: Build vault_token WASM (required for vault-contract tests)
         run: cargo build --release --target wasm32-unknown-unknown -p vault-token-contract
+
+      - name: Ensure vault_token.wasm is available for vault-contract tests
+        run: test -f target/wasm32-unknown-unknown/release/vault_token.wasm
 
       - name: Test contracts
         run: cargo test --lib
+
+      # The vault contract's integration tests link against the pre-compiled
+      # vault_token.wasm artifact built above. Run them explicitly and fail the
+      # job if zero tests execute — a green run with no tests would otherwise
+      # give false confidence that the contract logic was verified.
+      - name: Run vault-contract tests
+        run: |
+          # Capture output but still fail the job if the build/test command
+          # itself errors (e.g. a missing WASM artifact aborts compilation).
+          if ! output=$(cargo test -p vault-contract 2>&1); then
+            echo "$output"
+            echo "ERROR: vault-contract tests failed to build or run"
+            exit 1
+          fi
+          echo "$output"
+          # \b0 only matches a standalone zero, so "10 tests" / "40 passed"
+          # never trip this guard — only a genuinely empty run does.
+          if echo "$output" | grep -qE '\b0 tests'; then
+            echo "ERROR: No vault-contract tests ran — possible missing WASM artifact"
+            exit 1
+          fi
 
