@@ -130,6 +130,10 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Lint (security rules)
+        run: npm run lint
+        continue-on-error: true
+
       - name: Build
         run: npm run build
 
